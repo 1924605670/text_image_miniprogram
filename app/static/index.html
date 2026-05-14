@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Text Image Demo</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="panel composer">
+        <div class="brand-row">
+          <div>
+            <p class="eyebrow">Text Image Demo</p>
+            <h1>文生图工作台</h1>
+          </div>
+          <span id="healthBadge" class="status-dot">检查中</span>
+        </div>
+
+        <form id="generationForm" class="stack">
+          <label class="field">
+            <span>提示词</span>
+            <textarea name="prompt" rows="9" maxlength="4000" required placeholder="主体、场景、构图、光线、材质"></textarea>
+          </label>
+
+          <div class="field">
+            <span>风格</span>
+            <div id="styleButtons" class="segmented"></div>
+          </div>
+
+          <label class="field">
+            <span>负面提示词</span>
+            <textarea name="negative_prompt" rows="3" maxlength="1200" placeholder="不想出现的元素"></textarea>
+          </label>
+
+          <div class="grid-2">
+            <label class="field">
+              <span>尺寸</span>
+              <select name="size" id="sizeSelect"></select>
+            </label>
+            <label class="field">
+              <span>质量</span>
+              <select name="quality" id="qualitySelect"></select>
+            </label>
+          </div>
+
+          <div class="grid-3">
+            <label class="field">
+              <span>格式</span>
+              <select name="output_format" id="formatSelect"></select>
+            </label>
+            <label class="field">
+              <span>压缩</span>
+              <input name="output_compression" type="number" min="0" max="100" placeholder="auto" />
+            </label>
+            <label class="field">
+              <span>张数</span>
+              <input name="n" type="number" min="1" max="4" value="1" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>背景</span>
+            <select name="background" id="backgroundSelect"></select>
+          </label>
+
+          <button class="primary-action" type="submit">
+            <i data-lucide="wand-sparkles"></i>
+            <span>生成</span>
+          </button>
+        </form>
+      </aside>
+
+      <main class="workspace">
+        <section class="toolbar">
+          <div>
+            <p class="eyebrow">Provider</p>
+            <h2 id="providerTitle">gpt-image-2</h2>
+          </div>
+          <div class="toolbar-actions">
+            <button id="refreshHistory" class="icon-button" type="button" title="刷新历史">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+        </section>
+
+        <section id="resultPanel" class="result-panel idle">
+          <div class="empty-state">
+            <i data-lucide="image"></i>
+            <h2>等待生成</h2>
+          </div>
+        </section>
+      </main>
+
+      <aside class="panel history-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">History</p>
+            <h2>最近任务</h2>
+          </div>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </aside>
+    </div>
+  </body>
+</html>
+
