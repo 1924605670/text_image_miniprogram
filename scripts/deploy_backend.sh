@@ -33,39 +33,70 @@ APP_DIR="$APP_DIR"
 APP_PORT="$APP_PORT"
 cd "\$APP_DIR"
 
+exec 9>"\$APP_DIR/.deploy.lock"
+if ! flock -n 9; then
+  echo "Another deployment is already running for \$APP_DIR"
+  exit 1
+fi
+
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m compileall app
 .venv/bin/python -c "import app.main; print('import ok')"
 
-old_pid=\$(ss -ltnp 2>/dev/null | grep ":\$APP_PORT" | sed -n 's/.*pid=\\([0-9][0-9]*\\).*/\\1/p' | head -1 || true)
-if [ -n "\${old_pid:-}" ]; then
-  old_cwd=\$(readlink "/proc/\$old_pid/cwd" 2>/dev/null || true)
-  if [ "\$old_cwd" != "\$APP_DIR" ]; then
-    echo "Refusing to stop pid \$old_pid with cwd=\$old_cwd"
-    exit 1
-  fi
-  kill "\$old_pid"
-  for _ in \$(seq 1 30); do
-    if ! kill -0 "\$old_pid" 2>/dev/null; then
+listener_pids() {
+  ss -H -ltnp "sport = :\$APP_PORT" 2>/dev/null \
+    | grep -o 'pid=[0-9][0-9]*' \
+    | cut -d= -f2 \
+    | sort -u || true
+}
+
+old_pids=\$(listener_pids)
+if [ -n "\${old_pids:-}" ]; then
+  for old_pid in \$old_pids; do
+    old_cwd=\$(readlink "/proc/\$old_pid/cwd" 2>/dev/null || true)
+    if [ "\$old_cwd" != "\$APP_DIR" ]; then
+      echo "Refusing to stop pid \$old_pid with cwd=\$old_cwd"
+      exit 1
+    fi
+  done
+
+  kill \$old_pids
+  for _ in \$(seq 1 60); do
+    live_pids=""
+    for old_pid in \$old_pids; do
+      if kill -0 "\$old_pid" 2>/dev/null; then
+        live_pids="\$live_pids \$old_pid"
+      fi
+    done
+    port_pids=\$(listener_pids)
+    if [ -z "\${live_pids:-}" ] && [ -z "\${port_pids:-}" ]; then
       break
     fi
     sleep 0.5
   done
-  if kill -0 "\$old_pid" 2>/dev/null; then
-    echo "pid \$old_pid did not stop in time"
+
+  port_pids=\$(listener_pids)
+  if [ -n "\${port_pids:-}" ]; then
+    echo "Port \$APP_PORT is still in use by pid(s): \$port_pids"
     exit 1
   fi
 fi
 
 nohup .venv/bin/python3 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port "\$APP_PORT" >> app.log 2>&1 < /dev/null &
 new_pid=\$!
-sleep 2
-if ! kill -0 "\$new_pid" 2>/dev/null; then
-  echo "new process exited"
-  tail -80 app.log
-  exit 1
-fi
+
+for _ in \$(seq 1 30); do
+  if ! kill -0 "\$new_pid" 2>/dev/null; then
+    echo "new process exited"
+    tail -80 app.log
+    exit 1
+  fi
+  if curl -fsS -m 4 "http://127.0.0.1:\$APP_PORT/api/health" >/tmp/text_image_health.json; then
+    break
+  fi
+  sleep 0.5
+done
 
 curl -fsS -m 8 "http://127.0.0.1:\$APP_PORT/api/health" >/tmp/text_image_health.json
 curl -fsS -m 8 "http://127.0.0.1:\$APP_PORT/api/workflow/board" >/tmp/text_image_workflow_board.json
