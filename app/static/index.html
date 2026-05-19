@@ -54,6 +54,48 @@
           </article>
         </section>
 
+        <section class="acceptance-overview" aria-label="版本验收概览">
+          <div class="version-control">
+            <div>
+              <p class="eyebrow">Version</p>
+              <h2>版本验收工作台</h2>
+            </div>
+            <label class="field compact-field">
+              <span>版本筛选</span>
+              <select id="versionFilter">
+                <option value="">全部版本</option>
+              </select>
+            </label>
+          </div>
+          <div class="readiness-panel">
+            <div>
+              <p class="eyebrow">Readiness</p>
+              <strong id="readinessPercent">0%</strong>
+            </div>
+            <div class="readiness-track" aria-hidden="true">
+              <span id="readinessBar"></span>
+            </div>
+          </div>
+          <div class="insight-grid">
+            <article>
+              <span id="insightReleaseCount">0</span>
+              <p>发布单</p>
+            </article>
+            <article>
+              <span id="insightRiskCount">0</span>
+              <p>风险项</p>
+            </article>
+            <article>
+              <span id="insightOpenIssueCount">0</span>
+              <p>遗留项</p>
+            </article>
+            <article>
+              <span id="insightBlockerCount">0</span>
+              <p>验收阻塞</p>
+            </article>
+          </div>
+        </section>
+
         <div class="workflow-layout">
           <aside class="panel workflow-panel">
             <div class="section-head">
@@ -161,6 +203,48 @@
             </section>
           </main>
         </div>
+
+        <dialog id="releaseDialog" class="record-dialog">
+          <form id="releaseRecordForm" class="record-form">
+            <input type="hidden" name="release_id" />
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Release Record</p>
+                <h2 id="releaseDialogTitle">发布记录</h2>
+              </div>
+              <button class="icon-button" type="button" id="closeReleaseDialog" title="关闭">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+            <label class="field">
+              <span>发布检查清单</span>
+              <textarea name="release_checklist" rows="5" maxlength="3000"></textarea>
+            </label>
+            <button class="secondary-action" id="markChecklistDone" type="button">
+              <i data-lucide="list-checks"></i>
+              <span>清单全部完成</span>
+            </button>
+            <label class="field">
+              <span>风险记录</span>
+              <textarea name="risk_notes" rows="3" maxlength="3000" placeholder="记录仍需关注的发布或配置风险"></textarea>
+            </label>
+            <label class="field">
+              <span>遗留问题</span>
+              <textarea name="known_issues" rows="3" maxlength="3000" placeholder="记录不阻塞测试版但需要跟踪的问题"></textarea>
+            </label>
+            <label class="field">
+              <span>测试入口</span>
+              <input name="test_version_url" maxlength="500" placeholder="测试版链接、二维码地址或微信后台说明" />
+            </label>
+            <div class="dialog-actions">
+              <button class="secondary-action" type="button" id="cancelReleaseRecord">取消</button>
+              <button class="primary-action" type="submit">
+                <i data-lucide="save"></i>
+                <span>保存记录</span>
+              </button>
+            </div>
+          </form>
+        </dialog>
       </section>
 
       <section id="imageView" class="view-pane app-shell">

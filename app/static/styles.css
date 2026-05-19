@@ -589,6 +589,103 @@ button:focus-visible {
   font-weight: 800;
 }
 
+.acceptance-overview {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.05fr) minmax(220px, 0.75fr) minmax(320px, 1.4fr);
+  gap: 12px;
+}
+
+.version-control,
+.readiness-panel,
+.insight-grid {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.version-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+}
+
+.version-control h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.compact-field {
+  gap: 5px;
+}
+
+.compact-field select {
+  height: 38px;
+}
+
+.readiness-panel {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  padding: 16px;
+}
+
+.readiness-panel strong {
+  display: block;
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.readiness-track,
+.release-readiness div {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9eef5;
+}
+
+.readiness-track span,
+.release-readiness i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.insight-grid article {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  padding: 16px 12px;
+}
+
+.insight-grid article:last-child {
+  border-right: 0;
+}
+
+.insight-grid span {
+  display: block;
+  color: var(--accent);
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.insight-grid p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .workflow-layout {
   display: grid;
   grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
@@ -723,6 +820,59 @@ button:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.release-readiness {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.release-readiness span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.checklist-view {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist-view li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 5px;
+  color: var(--muted);
+}
+
+.checklist-view li.done {
+  color: #0f5e3f;
+}
+
+.checklist-view span {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--soft);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.risk-text,
+.issue-text {
+  border-left: 3px solid var(--warn);
+  padding-left: 8px;
+}
+
+.issue-text {
+  border-left-color: var(--rose);
+}
+
 .card-actions {
   display: flex;
   flex-wrap: wrap;
@@ -744,6 +894,37 @@ button:focus-visible {
   color: var(--muted);
   background: rgba(255, 255, 255, 0.62);
   font-weight: 800;
+}
+
+.record-dialog {
+  width: min(680px, calc(100vw - 28px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 24px 80px rgba(16, 24, 40, 0.22);
+}
+
+.record-dialog::backdrop {
+  background: rgba(21, 30, 48, 0.34);
+}
+
+.record-form {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dialog-actions .primary-action,
+.dialog-actions .secondary-action {
+  min-width: 110px;
 }
 
 .pill.draft,
@@ -814,6 +995,10 @@ button:focus-visible {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .acceptance-overview {
+    grid-template-columns: 1fr;
+  }
+
   .workflow-layout {
     grid-template-columns: 1fr;
   }
@@ -855,6 +1040,18 @@ button:focus-visible {
 
   .metrics-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .version-control {
+    grid-template-columns: 1fr;
+  }
+
+  .insight-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .insight-grid article:nth-child(2n) {
+    border-right: 0;
   }
 
   .workflow-board {

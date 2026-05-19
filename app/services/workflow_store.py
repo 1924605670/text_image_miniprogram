@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.workflow_schemas import DEFAULT_COMPLETED_RELEASE_CHECKLIST, DEFAULT_RELEASE_CHECKLIST
+
 
 class WorkflowStore:
     def __init__(self, database_path: Path) -> None:
@@ -87,6 +89,10 @@ class WorkflowStore:
                     version TEXT NOT NULL DEFAULT '',
                     release_notes TEXT NOT NULL DEFAULT '',
                     rollback_notes TEXT NOT NULL DEFAULT '',
+                    release_checklist TEXT NOT NULL DEFAULT '',
+                    risk_notes TEXT NOT NULL DEFAULT '',
+                    known_issues TEXT NOT NULL DEFAULT '',
+                    test_version_url TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(test_task_id) REFERENCES workflow_test_tasks(id)
@@ -100,12 +106,45 @@ class WorkflowStore:
                     release_task_id TEXT NOT NULL UNIQUE,
                     status TEXT NOT NULL,
                     notes TEXT NOT NULL DEFAULT '',
+                    blocker_notes TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(release_task_id) REFERENCES workflow_release_tasks(id)
                 )
                 """
             )
+            self._ensure_column(connection, "workflow_release_tasks", "release_checklist", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "workflow_release_tasks", "risk_notes", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "workflow_release_tasks", "known_issues", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "workflow_release_tasks", "test_version_url", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "workflow_acceptances", "blocker_notes", "TEXT NOT NULL DEFAULT ''")
+            connection.execute(
+                """
+                UPDATE workflow_release_tasks
+                SET release_checklist = ?
+                WHERE release_checklist = '' AND status = 'submitted_test_version'
+                """,
+                (DEFAULT_COMPLETED_RELEASE_CHECKLIST,),
+            )
+            connection.execute(
+                """
+                UPDATE workflow_release_tasks
+                SET release_checklist = ?
+                WHERE release_checklist = ''
+                """,
+                (DEFAULT_RELEASE_CHECKLIST,),
+            )
+
+    def _ensure_column(
+        self,
+        connection: sqlite3.Connection,
+        table: str,
+        column: str,
+        definition: str,
+    ) -> None:
+        columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in columns:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def create_requirement(self, data: dict[str, Any]) -> dict[str, Any]:
         record = {**data, "id": _id(), "status": "draft", "created_at": _now(), "updated_at": _now()}
@@ -251,6 +290,10 @@ class WorkflowStore:
             "status": "pending",
             "server_deploy_result": "",
             "mini_program_test_result": "",
+            "release_checklist": data.get("release_checklist") or DEFAULT_RELEASE_CHECKLIST,
+            "risk_notes": data.get("risk_notes", ""),
+            "known_issues": data.get("known_issues", ""),
+            "test_version_url": data.get("test_version_url", ""),
             "created_at": _now(),
             "updated_at": _now(),
         }
@@ -260,9 +303,10 @@ class WorkflowStore:
                 INSERT INTO workflow_release_tasks (
                     id, test_task_id, operator, status, server_deploy_result,
                     mini_program_test_result, version, release_notes, rollback_notes,
+                    release_checklist, risk_notes, known_issues, test_version_url,
                     created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 _values(
                     record,
@@ -275,6 +319,10 @@ class WorkflowStore:
                     "version",
                     "release_notes",
                     "rollback_notes",
+                    "release_checklist",
+                    "risk_notes",
+                    "known_issues",
+                    "test_version_url",
                     "created_at",
                     "updated_at",
                 ),
@@ -299,21 +347,38 @@ class WorkflowStore:
                 "version",
                 "release_notes",
                 "rollback_notes",
+                "release_checklist",
+                "risk_notes",
+                "known_issues",
+                "test_version_url",
             },
         )
 
-    def upsert_acceptance(self, release_task_id: str, *, status: str, notes: str = "") -> dict[str, Any]:
+    def upsert_acceptance(
+        self,
+        release_task_id: str,
+        *,
+        status: str,
+        notes: str = "",
+        blocker_notes: str = "",
+    ) -> dict[str, Any]:
         now = _now()
         acceptance_id = _id()
         with self._lock, self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO workflow_acceptances (id, release_task_id, status, notes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO workflow_acceptances (
+                    id, release_task_id, status, notes, blocker_notes, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(release_task_id)
-                DO UPDATE SET status = excluded.status, notes = excluded.notes, updated_at = excluded.updated_at
+                DO UPDATE SET
+                    status = excluded.status,
+                    notes = excluded.notes,
+                    blocker_notes = excluded.blocker_notes,
+                    updated_at = excluded.updated_at
                 """,
-                (acceptance_id, release_task_id, status, notes, now, now),
+                (acceptance_id, release_task_id, status, notes, blocker_notes, now, now),
             )
         return self.get_acceptance_by_release(release_task_id)
 

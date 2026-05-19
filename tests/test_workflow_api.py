@@ -84,6 +84,13 @@ def test_workflow_api_happy_path(tmp_path: Path) -> None:
                 "status": "submitted_test_version",
                 "server_deploy_result": "服务健康检查通过",
                 "mini_program_test_result": "测试版提交成功",
+                "release_checklist": (
+                    "- [x] 服务器部署健康检查通过\n"
+                    "- [x] 小程序测试版提交记录完整\n"
+                    "- [x] 回滚方案和负责人已确认"
+                ),
+                "risk_notes": "微信测试版上传仍需人工确认",
+                "known_issues": "暂无阻塞遗留",
             },
         ).status_code
         == 200
@@ -97,3 +104,17 @@ def test_workflow_api_happy_path(tmp_path: Path) -> None:
     board = client.get("/api/workflow/board")
     assert board.status_code == 200
     assert board.json()["acceptances"][0]["status"] == "accepted"
+    assert "0.2.0" in board.json()["versions"]
+
+    filtered = client.get("/api/workflow/board?version=0.2.0")
+    assert filtered.status_code == 200
+    assert filtered.json()["selected_version"] == "0.2.0"
+    assert filtered.json()["requirements"][0]["id"] == requirement_id
+
+
+def test_root_serves_workbench() -> None:
+    client = TestClient(main.app)
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "小程序测试版工作台" in response.text

@@ -126,12 +126,27 @@ def test_release_and_acceptance_require_test_version_submission(tmp_path) -> Non
     with pytest.raises(WorkflowRuleError, match="服务器部署结果"):
         service.update_release_task(release["id"], ReleaseTaskUpdate(status="submitted_test_version"))
 
+    with pytest.raises(WorkflowRuleError, match="发布检查清单"):
+        service.update_release_task(
+            release["id"],
+            ReleaseTaskUpdate(
+                status="submitted_test_version",
+                server_deploy_result="服务健康检查通过",
+                mini_program_test_result="小程序测试版提交成功",
+            ),
+        )
+
     service.update_release_task(
         release["id"],
         ReleaseTaskUpdate(
             status="submitted_test_version",
             server_deploy_result="服务健康检查通过",
             mini_program_test_result="小程序测试版提交成功",
+            release_checklist=(
+                "- [x] 服务器部署健康检查通过\n"
+                "- [x] 小程序测试版提交记录完整\n"
+                "- [x] 回滚方案和负责人已确认"
+            ),
         ),
     )
     acceptance = service.update_acceptance(
@@ -140,6 +155,50 @@ def test_release_and_acceptance_require_test_version_submission(tmp_path) -> Non
     )
 
     assert acceptance["status"] == "accepted"
+
+
+def test_board_can_filter_by_version(tmp_path) -> None:
+    service = WorkflowService(WorkflowStore(tmp_path / "app.db"))
+    v2_requirement = _confirmed_requirement(service)
+    v3_requirement = service.confirm_requirement(
+        service.create_requirement(
+            RequirementCreate(
+                title="微信上传自动化",
+                business_goal="减少手工上传测试版",
+                scope="接入小程序 CI",
+                acceptance_criteria="可以生成上传记录",
+                expected_version="0.3.0",
+            )
+        )["id"]
+    )
+
+    board = service.board(version="0.2.0")
+
+    assert board.selected_version == "0.2.0"
+    assert "0.2.0" in board.versions
+    assert "0.3.0" in board.versions
+    assert [item.id for item in board.requirements] == [v2_requirement["id"]]
+    assert v3_requirement["id"] not in [item.id for item in board.requirements]
+
+
+def test_acceptance_rejection_requires_blocker_notes(tmp_path) -> None:
+    service = WorkflowService(WorkflowStore(tmp_path / "app.db"))
+    release = _submitted_release(service)
+
+    with pytest.raises(WorkflowRuleError, match="阻塞原因"):
+        service.update_acceptance(release["id"], AcceptanceUpdate(status="rejected", notes="未通过"))
+
+    acceptance = service.update_acceptance(
+        release["id"],
+        AcceptanceUpdate(
+            status="rejected",
+            notes="产品验收未通过",
+            blocker_notes="体验版二维码打不开",
+        ),
+    )
+
+    assert acceptance["status"] == "rejected"
+    assert acceptance["blocker_notes"] == "体验版二维码打不开"
 
 
 def _confirmed_requirement(service: WorkflowService) -> dict:
@@ -153,3 +212,55 @@ def _confirmed_requirement(service: WorkflowService) -> dict:
         )
     )
     return service.confirm_requirement(requirement["id"])
+
+
+def _submitted_release(service: WorkflowService) -> dict:
+    requirement = _confirmed_requirement(service)
+    development = service.create_development_task(
+        DevelopmentTaskCreate(
+            requirement_id=requirement["id"],
+            title="测试版发布",
+            description="实现发布记录",
+            developer="dev",
+        )
+    )
+    service.update_development_task(
+        development["id"],
+        DevelopmentTaskUpdate(
+            status="submitted_to_test",
+            self_test_notes="自测主流程和异常提示通过",
+        ),
+    )
+    test_task = service.create_test_task(
+        WorkflowTestTaskCreate(
+            development_task_id=development["id"],
+            test_cases="需求确认、开发提交、测试通过、发布、验收",
+            tester="qa",
+        )
+    )
+    service.update_test_task(
+        test_task["id"],
+        WorkflowTestTaskUpdate(status="passed", result_notes="回归通过"),
+    )
+    release = service.create_release_task(
+        ReleaseTaskCreate(
+            test_task_id=test_task["id"],
+            operator="ops",
+            version="0.2.0-test",
+            release_notes="提交小程序测试版记录",
+            rollback_notes="回退上一测试版本",
+        )
+    )
+    return service.update_release_task(
+        release["id"],
+        ReleaseTaskUpdate(
+            status="submitted_test_version",
+            server_deploy_result="服务健康检查通过",
+            mini_program_test_result="小程序测试版提交成功",
+            release_checklist=(
+                "- [x] 服务器部署健康检查通过\n"
+                "- [x] 小程序测试版提交记录完整\n"
+                "- [x] 回滚方案和负责人已确认"
+            ),
+        ),
+    )

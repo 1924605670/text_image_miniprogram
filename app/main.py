@@ -10,6 +10,7 @@ from typing import Any, Optional
 import httpx
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.schemas import (
@@ -54,6 +55,8 @@ from app.workflow_schemas import (
 
 
 app = FastAPI(title="Text Image MiniProgram Backend", version="0.1.0")
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 store = JobStore(settings.database_path)
 workflow_store = WorkflowStore(settings.database_path)
@@ -80,6 +83,11 @@ REFERENCE_SUFFIX_BY_CONTENT_TYPE = {
     "image/heif": ".heif",
 }
 MAX_REFERENCE_IMAGE_BYTES = 20 * 1024 * 1024
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/api/health")
@@ -252,8 +260,8 @@ async def retry_generation(job_id: str) -> CreateGenerationResponse:
 
 
 @app.get("/api/workflow/board", response_model=WorkflowBoardOut)
-async def workflow_board() -> WorkflowBoardOut:
-    return workflow_service.board()
+async def workflow_board(version: str = "") -> WorkflowBoardOut:
+    return workflow_service.board(version=version)
 
 
 @app.post("/api/workflow/requirements", response_model=RequirementOut, status_code=201)

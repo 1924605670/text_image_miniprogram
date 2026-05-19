@@ -18,6 +18,13 @@ TestStatus = Literal["pending", "in_progress", "failed", "retesting", "passed"]
 ReleaseStatus = Literal["pending", "in_progress", "submitted_test_version", "failed"]
 AcceptanceStatus = Literal["pending", "accepted", "rejected"]
 
+DEFAULT_RELEASE_CHECKLIST = (
+    "- [ ] 服务器部署健康检查通过\n"
+    "- [ ] 小程序测试版提交记录完整\n"
+    "- [ ] 回滚方案和负责人已确认"
+)
+DEFAULT_COMPLETED_RELEASE_CHECKLIST = DEFAULT_RELEASE_CHECKLIST.replace("[ ]", "[x]")
+
 
 class WorkflowBaseModel(BaseModel):
     @field_validator("*", mode="before")
@@ -97,6 +104,10 @@ class ReleaseTaskCreate(WorkflowBaseModel):
     version: str = Field("test", max_length=80)
     release_notes: str = Field("", max_length=2000)
     rollback_notes: str = Field("", max_length=2000)
+    release_checklist: str = Field(DEFAULT_RELEASE_CHECKLIST, max_length=3000)
+    risk_notes: str = Field("", max_length=3000)
+    known_issues: str = Field("", max_length=3000)
+    test_version_url: str = Field("", max_length=500)
 
 
 class ReleaseTaskUpdate(WorkflowBaseModel):
@@ -106,8 +117,13 @@ class ReleaseTaskUpdate(WorkflowBaseModel):
     version: Optional[str] = Field(None, max_length=80)
     release_notes: Optional[str] = Field(None, max_length=2000)
     rollback_notes: Optional[str] = Field(None, max_length=2000)
+    release_checklist: Optional[str] = Field(None, max_length=3000)
+    risk_notes: Optional[str] = Field(None, max_length=3000)
+    known_issues: Optional[str] = Field(None, max_length=3000)
+    test_version_url: Optional[str] = Field(None, max_length=500)
     acceptance_status: Optional[AcceptanceStatus] = None
     acceptance_notes: Optional[str] = Field(None, max_length=2000)
+    acceptance_blocker_notes: Optional[str] = Field(None, max_length=2000)
 
 
 class ReleaseTaskOut(ReleaseTaskCreate):
@@ -118,6 +134,10 @@ class ReleaseTaskOut(ReleaseTaskCreate):
     version: str
     release_notes: str
     rollback_notes: str
+    release_checklist: str
+    risk_notes: str
+    known_issues: str
+    test_version_url: str
     created_at: str
     updated_at: str
 
@@ -125,6 +145,7 @@ class ReleaseTaskOut(ReleaseTaskCreate):
 class AcceptanceUpdate(WorkflowBaseModel):
     status: AcceptanceStatus
     notes: str = Field("", max_length=2000)
+    blocker_notes: str = Field("", max_length=2000)
 
 
 class AcceptanceOut(WorkflowBaseModel):
@@ -132,6 +153,7 @@ class AcceptanceOut(WorkflowBaseModel):
     release_task_id: str
     status: AcceptanceStatus
     notes: str
+    blocker_notes: str
     created_at: str
     updated_at: str
 
@@ -142,3 +164,5 @@ class WorkflowBoardOut(BaseModel):
     test_tasks: list[TestTaskOut]
     release_tasks: list[ReleaseTaskOut]
     acceptances: list[AcceptanceOut]
+    versions: list[str] = Field(default_factory=list)
+    selected_version: str = ""

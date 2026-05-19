@@ -6,6 +6,7 @@
 
 - 文生图任务：提示词、负面提示词、风格预设、尺寸、质量、格式、压缩率、背景、生成张数。
 - 小程序测试版工作台：需求池、开发自测、测试记录、发布记录和产品验收看板。
+- 二期版本验收工作台：版本筛选、发布检查清单、风险/遗留问题、测试入口和验收阻塞记录。
 - 后端任务队列：创建任务后异步执行，前端轮询状态。
 - 重试机制：网络异常、超时、429、5xx 等可恢复错误会指数退避重试。
 - 长耗时处理：默认使用 Image API 流式生成，避免代理长时间无响应导致 504。
@@ -43,6 +44,7 @@ pytest
 - `POST /api/generations/{job_id}/retry`：用同一参数重新创建任务。
 - `GET /api/images/{filename}`：读取本地生成图片。
 - `GET /api/workflow/board`：小程序测试版流程看板。
+- `GET /api/workflow/board?version=0.2.0`：按版本筛选流程看板，并返回可选版本列表。
 - `POST /api/workflow/requirements`：创建需求。
 - `POST /api/workflow/requirements/{requirement_id}/confirm`：确认需求。
 - `POST /api/workflow/development-tasks`：创建开发任务。
@@ -146,6 +148,14 @@ ssh ubuntu@111.229.10.122 'curl -fsS -X POST http://127.0.0.1:18090/api/auth/log
 - 增量更新：远端 `app/main.py` 新增 `/api/workflow/*` 接口；远端 `app/config.py` 补充 `WECHAT_APP_ID`、`WECHAT_APP_SECRET` 默认字段，修复 client login 因配置字段缺失导致的 500
 - 重启后 PID：`468166`
 - 验证通过：`/api/health`、`/api/workflow/board`、`POST /api/auth/login`
+
+二期开发说明：
+
+- `workflow_release_tasks` 新增发布检查清单、风险记录、遗留问题和测试入口字段。
+- `workflow_acceptances` 新增验收阻塞原因字段。
+- SQLite 会在服务启动时自动补列，适配服务器已有数据库。
+- 提交测试版前必须记录服务器部署结果、小程序测试版提交结果，并完成发布检查清单。
+- 验收驳回必须记录阻塞原因。
 
 ## GitHub CI/CD
 

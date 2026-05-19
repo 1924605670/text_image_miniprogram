@@ -3,6 +3,7 @@ const state = {
   pollTimer: null,
   selectedStyle: "cinematic",
   workflow: null,
+  selectedWorkflowVersion: "",
 };
 
 const form = document.querySelector("#generationForm");
@@ -13,6 +14,9 @@ const healthBadge = document.querySelector("#healthBadge");
 const providerTitle = document.querySelector("#providerTitle");
 const refreshHistory = document.querySelector("#refreshHistory");
 const workflowBoard = document.querySelector("#workflowBoard");
+const versionFilter = document.querySelector("#versionFilter");
+const releaseDialog = document.querySelector("#releaseDialog");
+const releaseRecordForm = document.querySelector("#releaseRecordForm");
 
 document.addEventListener("DOMContentLoaded", async () => {
   await Promise.all([loadHealth(), loadOptions(), loadHistory(), loadWorkflow()]);
@@ -40,6 +44,18 @@ function wireEvents() {
   form.addEventListener("input", saveDraft);
   refreshHistory.addEventListener("click", loadHistory);
   workflowBoard.addEventListener("click", handleWorkflowAction);
+  versionFilter.addEventListener("change", async (event) => {
+    state.selectedWorkflowVersion = event.target.value;
+    await loadWorkflow();
+  });
+  document.querySelector("#closeReleaseDialog").addEventListener("click", closeReleaseDialog);
+  document.querySelector("#cancelReleaseRecord").addEventListener("click", closeReleaseDialog);
+  document.querySelector("#markChecklistDone").addEventListener("click", () => {
+    releaseRecordForm.elements.release_checklist.value = checkedChecklist(
+      releaseRecordForm.elements.release_checklist.value,
+    );
+  });
+  releaseRecordForm.addEventListener("submit", saveReleaseRecord);
 
   document.querySelector("#formatSelect").addEventListener("change", (event) => {
     const compression = form.elements.output_compression;
@@ -82,7 +98,10 @@ async function loadOptions() {
 
 async function loadWorkflow() {
   try {
-    state.workflow = await api("/api/workflow/board");
+    const query = state.selectedWorkflowVersion
+      ? `?version=${encodeURIComponent(state.selectedWorkflowVersion)}`
+      : "";
+    state.workflow = await api(`/api/workflow/board${query}`);
     renderWorkflow();
   } catch (error) {
     renderWorkflowError(error.message);
@@ -203,12 +222,14 @@ async function runWorkflowAction(action, id) {
     });
   }
   if (action === "create-release") {
+    const testTask = findTest(id);
+    const requirement = findRequirement(testTask.requirement_id);
     return api("/api/workflow/release-tasks", {
       method: "POST",
       body: JSON.stringify({
         test_task_id: id,
         operator: workflowDefault("defaultOperator", "ops"),
-        version: workflowDefault("defaultVersion", "0.2.0-test"),
+        version: workflowDefault("defaultVersion", requirement.expected_version || "0.2.0-test"),
         release_notes: "服务器部署并提交微信小程序测试版本。",
         rollback_notes: "如测试版异常，回退到上一稳定测试版本。",
       }),
@@ -227,8 +248,13 @@ async function runWorkflowAction(action, id) {
         status: "submitted_test_version",
         server_deploy_result: "服务器部署完成，健康检查通过。",
         mini_program_test_result: "小程序测试版本提交成功，等待产品验收。",
+        release_checklist: checkedChecklist(findRelease(id).release_checklist),
       }),
     });
+  }
+  if (action === "edit-release-record") {
+    openReleaseDialog(id);
+    return null;
   }
   if (action === "accept-release") {
     return api(`/api/workflow/release-tasks/${id}/acceptance`, {
@@ -237,15 +263,22 @@ async function runWorkflowAction(action, id) {
     });
   }
   if (action === "reject-release") {
+    const value = prompt("验收阻塞原因", "发现影响验收的问题，需要修复后重新提交。");
+    if (value === null) return null;
     return api(`/api/workflow/release-tasks/${id}/acceptance`, {
       method: "PATCH",
-      body: JSON.stringify({ status: "rejected", notes: "产品验收未通过，需补齐遗留问题。" }),
+      body: JSON.stringify({
+        status: "rejected",
+        notes: "产品验收未通过，需补齐遗留问题。",
+        blocker_notes: value,
+      }),
     });
   }
 }
 
 function renderWorkflow() {
   const board = state.workflow || emptyWorkflow();
+  syncVersionFilter(board);
   document.querySelector("#metricRequirements").textContent = board.requirements.length;
   document.querySelector("#metricDevelopment").textContent = board.development_tasks.length;
   document.querySelector("#metricTesting").textContent = board.test_tasks.length;
@@ -255,12 +288,96 @@ function renderWorkflow() {
   document.querySelector("#metricAcceptance").textContent = board.acceptances.filter(
     (item) => item.status === "accepted",
   ).length;
+  renderAcceptanceOverview(board);
 
   renderWorkflowList("#requirementList", board.requirements, requirementCard);
   renderWorkflowList("#developmentList", board.development_tasks, developmentCard);
   renderWorkflowList("#testList", board.test_tasks, testCard);
   renderWorkflowList("#releaseList", board.release_tasks, releaseCard);
   window.lucide?.createIcons();
+}
+
+function openReleaseDialog(id) {
+  const release = findRelease(id);
+  releaseRecordForm.elements.release_id.value = id;
+  releaseRecordForm.elements.release_checklist.value = release.release_checklist || defaultReleaseChecklist();
+  releaseRecordForm.elements.risk_notes.value = release.risk_notes || "";
+  releaseRecordForm.elements.known_issues.value = release.known_issues || "";
+  releaseRecordForm.elements.test_version_url.value = release.test_version_url || "";
+  document.querySelector("#releaseDialogTitle").textContent = `${release.version || "测试版本"}发布记录`;
+  if (typeof releaseDialog.showModal === "function") {
+    releaseDialog.showModal();
+  } else {
+    releaseDialog.setAttribute("open", "");
+  }
+  window.lucide?.createIcons();
+}
+
+function closeReleaseDialog() {
+  if (typeof releaseDialog.close === "function") {
+    releaseDialog.close();
+  } else {
+    releaseDialog.removeAttribute("open");
+  }
+}
+
+async function saveReleaseRecord(event) {
+  event.preventDefault();
+  const releaseId = releaseRecordForm.elements.release_id.value;
+  const submit = releaseRecordForm.querySelector("button[type='submit']");
+  submit.disabled = true;
+  try {
+    await api(`/api/workflow/release-tasks/${releaseId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        release_checklist: releaseRecordForm.elements.release_checklist.value,
+        risk_notes: releaseRecordForm.elements.risk_notes.value,
+        known_issues: releaseRecordForm.elements.known_issues.value,
+        test_version_url: releaseRecordForm.elements.test_version_url.value,
+      }),
+    });
+    closeReleaseDialog();
+    await loadWorkflow();
+  } catch (error) {
+    renderWorkflowToast(error.message);
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+function syncVersionFilter(board) {
+  const selected = board.selected_version || state.selectedWorkflowVersion || "";
+  const options = [`<option value="">全部版本</option>`]
+    .concat(
+      (board.versions || []).map((version) => {
+        const active = version === selected ? " selected" : "";
+        return `<option value="${escapeHtml(version)}"${active}>${escapeHtml(version)}</option>`;
+      }),
+    )
+    .join("");
+  if (versionFilter.innerHTML !== options) {
+    versionFilter.innerHTML = options;
+  }
+  versionFilter.value = selected;
+}
+
+function renderAcceptanceOverview(board) {
+  const releaseCount = board.release_tasks.length;
+  const submittedCount = board.release_tasks.filter((item) => item.status === "submitted_test_version").length;
+  const acceptedCount = board.acceptances.filter((item) => item.status === "accepted").length;
+  const readiness = releaseCount ? Math.round(((submittedCount + acceptedCount) / (releaseCount * 2)) * 100) : 0;
+  const riskCount = board.release_tasks.filter((item) => item.risk_notes?.trim()).length;
+  const openIssueCount = board.release_tasks.filter((item) => item.known_issues?.trim()).length;
+  const blockerCount = board.acceptances.filter(
+    (item) => item.status === "rejected" || item.blocker_notes?.trim(),
+  ).length;
+
+  document.querySelector("#readinessPercent").textContent = `${readiness}%`;
+  document.querySelector("#readinessBar").style.width = `${readiness}%`;
+  document.querySelector("#insightReleaseCount").textContent = releaseCount;
+  document.querySelector("#insightRiskCount").textContent = riskCount;
+  document.querySelector("#insightOpenIssueCount").textContent = openIssueCount;
+  document.querySelector("#insightBlockerCount").textContent = blockerCount;
 }
 
 function renderWorkflowList(selector, items, renderer) {
@@ -341,6 +458,7 @@ function testCard(item) {
 function releaseCard(item) {
   const testTask = findTest(item.test_task_id);
   const acceptance = state.workflow.acceptances.find((entry) => entry.release_task_id === item.id);
+  const checklist = checklistState(item.release_checklist);
   return `
     <article class="workflow-card">
       <div class="workflow-card-head">
@@ -348,14 +466,29 @@ function releaseCard(item) {
         <span class="pill ${item.status}">${releaseStatusText(item.status)}</span>
       </div>
       <p>${escapeHtml(item.operator)} · ${escapeHtml(findRequirement(testTask.requirement_id).title)}</p>
+      <div class="release-readiness">
+        <span>${checklist.done}/${checklist.total || 1}</span>
+        <div><i style="width: ${checklist.percent}%"></i></div>
+      </div>
       <dl>
         <div><dt>发布说明</dt><dd>${escapeHtml(item.release_notes || "待记录")}</dd></div>
+        <div><dt>检查清单</dt><dd>${releaseChecklistHtml(item.release_checklist)}</dd></div>
         ${item.server_deploy_result ? `<div><dt>服务</dt><dd>${escapeHtml(item.server_deploy_result)}</dd></div>` : ""}
         ${item.mini_program_test_result ? `<div><dt>测试版</dt><dd>${escapeHtml(item.mini_program_test_result)}</dd></div>` : ""}
-        ${acceptance ? `<div><dt>验收</dt><dd>${acceptanceStatusText(acceptance.status)} ${escapeHtml(acceptance.notes)}</dd></div>` : ""}
+        ${item.test_version_url ? `<div><dt>测试入口</dt><dd>${linkOrText(item.test_version_url)}</dd></div>` : ""}
+        ${item.risk_notes ? `<div><dt>风险</dt><dd class="risk-text">${escapeHtml(item.risk_notes)}</dd></div>` : ""}
+        ${item.known_issues ? `<div><dt>遗留</dt><dd class="issue-text">${escapeHtml(item.known_issues)}</dd></div>` : ""}
+        ${
+          acceptance
+            ? `<div><dt>验收</dt><dd>${acceptanceStatusText(acceptance.status)} ${escapeHtml(acceptance.notes)} ${
+                acceptance.blocker_notes ? `阻塞：${escapeHtml(acceptance.blocker_notes)}` : ""
+              }</dd></div>`
+            : ""
+        }
       </dl>
       <div class="card-actions">
         ${item.status === "pending" ? actionButton("start-release", item.id, "play", "发布") : ""}
+        ${actionButton("edit-release-record", item.id, "file-pen-line", "记录")}
         ${item.status !== "submitted_test_version" ? actionButton("submit-release", item.id, "upload-cloud", "提交测试版") : ""}
         ${item.status === "submitted_test_version" ? actionButton("accept-release", item.id, "check", "验收通过") : ""}
         ${item.status === "submitted_test_version" ? actionButton("reject-release", item.id, "x", "验收驳回") : ""}
@@ -400,6 +533,71 @@ function findTest(id) {
   return state.workflow.test_tasks.find((item) => item.id === id) || { requirement_id: "" };
 }
 
+function findRelease(id) {
+  return state.workflow.release_tasks.find((item) => item.id === id) || {};
+}
+
+function checklistState(value) {
+  const source = String(value || defaultReleaseChecklist());
+  const lines = source
+    .split("\n")
+    .map((line) => line.trim().toLowerCase())
+    .filter(Boolean);
+  const items = lines.filter((line) => line.startsWith("- ["));
+  const total = items.length || (source.trim() ? 1 : 0);
+  const done = items.length ? items.filter((line) => line.startsWith("- [x]")).length : total;
+  return {
+    done,
+    total,
+    percent: total ? Math.round((done / total) * 100) : 0,
+  };
+}
+
+function checkedChecklist(value) {
+  const source = String(value || defaultReleaseChecklist());
+  return source
+    .split("\n")
+    .map((line) => {
+      if (line.trim().startsWith("- [ ]")) return line.replace("- [ ]", "- [x]");
+      return line;
+    })
+    .join("\n");
+}
+
+function releaseChecklistHtml(value) {
+  const lines = String(value || defaultReleaseChecklist())
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return `
+    <ul class="checklist-view">
+      ${lines
+        .map((line) => {
+          const checked = line.toLowerCase().startsWith("- [x]");
+          const text = line.replace(/^- \[[ xX]\]\s*/, "");
+          return `<li class="${checked ? "done" : ""}"><span>${checked ? "OK" : "--"}</span>${escapeHtml(text)}</li>`;
+        })
+        .join("")}
+    </ul>
+  `;
+}
+
+function defaultReleaseChecklist() {
+  return [
+    "- [ ] 服务器部署健康检查通过",
+    "- [ ] 小程序测试版提交记录完整",
+    "- [ ] 回滚方案和负责人已确认",
+  ].join("\n");
+}
+
+function linkOrText(value) {
+  const safe = escapeHtml(value);
+  if (/^https?:\/\//i.test(value)) {
+    return `<a href="${safe}" target="_blank" rel="noreferrer">${safe}</a>`;
+  }
+  return safe;
+}
+
 function workflowDefault(id, fallback) {
   return document.querySelector(`#${id}`)?.value.trim() || fallback;
 }
@@ -415,6 +613,8 @@ function emptyWorkflow() {
     test_tasks: [],
     release_tasks: [],
     acceptances: [],
+    versions: [],
+    selected_version: "",
   };
 }
 

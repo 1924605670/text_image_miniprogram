@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.workflow_schemas import (
     AcceptanceUpdate,
+    DEFAULT_RELEASE_CHECKLIST,
     DevelopmentTaskCreate,
     DevelopmentTaskUpdate,
     ReleaseTaskCreate,
@@ -22,13 +23,33 @@ class WorkflowService:
     def __init__(self, store: WorkflowStore) -> None:
         self.store = store
 
-    def board(self) -> WorkflowBoardOut:
+    def board(self, version: str = "") -> WorkflowBoardOut:
+        requirements = self.store.list_requirements()
+        development_tasks = self.store.list_development_tasks()
+        test_tasks = self.store.list_test_tasks()
+        release_tasks = self.store.list_release_tasks()
+        acceptances = self.store.list_acceptances()
+        versions = _versions(requirements, release_tasks)
+        selected_version = version.strip()
+
+        if selected_version:
+            requirements, development_tasks, test_tasks, release_tasks, acceptances = _filter_board(
+                selected_version,
+                requirements,
+                development_tasks,
+                test_tasks,
+                release_tasks,
+                acceptances,
+            )
+
         return WorkflowBoardOut(
-            requirements=self.store.list_requirements(),
-            development_tasks=self.store.list_development_tasks(),
-            test_tasks=self.store.list_test_tasks(),
-            release_tasks=self.store.list_release_tasks(),
-            acceptances=self.store.list_acceptances(),
+            requirements=requirements,
+            development_tasks=development_tasks,
+            test_tasks=test_tasks,
+            release_tasks=release_tasks,
+            acceptances=acceptances,
+            versions=versions,
+            selected_version=selected_version,
         )
 
     def create_requirement(self, request: RequirementCreate) -> dict:
@@ -85,33 +106,140 @@ class WorkflowService:
         test_task = self.store.get_test_task(request.test_task_id)
         if test_task["status"] != "passed":
             raise WorkflowRuleError("未测试通过的功能不能进入发布任务")
-        return self.store.create_release_task(request.model_dump())
+        data = request.model_dump()
+        if not data.get("release_checklist", "").strip():
+            data["release_checklist"] = DEFAULT_RELEASE_CHECKLIST
+        return self.store.create_release_task(data)
 
     def update_release_task(self, task_id: str, request: ReleaseTaskUpdate) -> dict:
         current = self.store.get_release_task(task_id)
         fields = request.model_dump(exclude_none=True)
         acceptance_status = fields.pop("acceptance_status", None)
         acceptance_notes = fields.pop("acceptance_notes", "")
-        next_status = fields.get("status", current["status"])
+        acceptance_blocker_notes = fields.pop("acceptance_blocker_notes", "")
+        is_submitting_test_version = (
+            fields.get("status") == "submitted_test_version"
+            and current["status"] != "submitted_test_version"
+        )
         server_result = fields.get("server_deploy_result", current.get("server_deploy_result", ""))
         mini_result = fields.get("mini_program_test_result", current.get("mini_program_test_result", ""))
-        if next_status == "submitted_test_version" and (
+        release_checklist = fields.get("release_checklist", current.get("release_checklist", ""))
+        if is_submitting_test_version and (
             not server_result.strip() or not mini_result.strip()
         ):
             raise WorkflowRuleError("提交测试版前必须记录服务器部署结果和小程序测试版本提交结果")
+        if is_submitting_test_version and not _checklist_complete(release_checklist):
+            raise WorkflowRuleError("提交测试版前必须完成发布检查清单")
         release = self.store.update_release_task(task_id, **fields)
         if release["status"] == "submitted_test_version":
             self.store.upsert_acceptance(task_id, status="pending", notes="")
         if acceptance_status is not None:
-            self.update_acceptance(task_id, AcceptanceUpdate(status=acceptance_status, notes=acceptance_notes))
+            self.update_acceptance(
+                task_id,
+                AcceptanceUpdate(
+                    status=acceptance_status,
+                    notes=acceptance_notes,
+                    blocker_notes=acceptance_blocker_notes,
+                ),
+            )
         return release
 
     def update_acceptance(self, release_task_id: str, request: AcceptanceUpdate) -> dict:
         release = self.store.get_release_task(release_task_id)
         if release["status"] != "submitted_test_version":
             raise WorkflowRuleError("小程序测试版提交成功后才能验收")
+        if request.status == "rejected" and not request.blocker_notes.strip():
+            raise WorkflowRuleError("验收驳回必须记录阻塞原因")
         return self.store.upsert_acceptance(
             release_task_id,
             status=request.status,
             notes=request.notes,
+            blocker_notes=request.blocker_notes,
         )
+
+
+def _versions(requirements: list[dict], release_tasks: list[dict]) -> list[str]:
+    seen = {
+        item.get("expected_version", "").strip()
+        for item in requirements
+        if item.get("expected_version", "").strip()
+    }
+    seen.update(
+        item.get("version", "").strip()
+        for item in release_tasks
+        if item.get("version", "").strip()
+    )
+    return sorted(seen, reverse=True)
+
+
+def _filter_board(
+    version: str,
+    requirements: list[dict],
+    development_tasks: list[dict],
+    test_tasks: list[dict],
+    release_tasks: list[dict],
+    acceptances: list[dict],
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict]]:
+    test_by_id = {item["id"]: item for item in test_tasks}
+    selected_requirement_ids = {
+        item["id"]
+        for item in requirements
+        if item.get("expected_version", "").strip() == version
+    }
+    selected_release_ids = {
+        item["id"]
+        for item in release_tasks
+        if item.get("version", "").strip() == version
+    }
+    selected_test_ids = {
+        release["test_task_id"]
+        for release in release_tasks
+        if release["id"] in selected_release_ids
+    }
+    selected_test_ids.update(
+        item["id"]
+        for item in test_tasks
+        if item.get("requirement_id") in selected_requirement_ids
+    )
+    selected_development_ids = {
+        test_by_id[test_id]["development_task_id"]
+        for test_id in selected_test_ids
+        if test_id in test_by_id
+    }
+    selected_development_ids.update(
+        item["id"]
+        for item in development_tasks
+        if item.get("requirement_id") in selected_requirement_ids
+    )
+    selected_requirement_ids.update(
+        item["requirement_id"]
+        for item in development_tasks
+        if item["id"] in selected_development_ids
+    )
+    selected_test_ids.update(
+        item["id"]
+        for item in test_tasks
+        if item.get("development_task_id") in selected_development_ids
+    )
+    selected_release_ids.update(
+        item["id"]
+        for item in release_tasks
+        if item.get("test_task_id") in selected_test_ids and item.get("version", "").strip() == version
+    )
+    selected_acceptance_release_ids = selected_release_ids
+
+    return (
+        [item for item in requirements if item["id"] in selected_requirement_ids],
+        [item for item in development_tasks if item["id"] in selected_development_ids],
+        [item for item in test_tasks if item["id"] in selected_test_ids],
+        [item for item in release_tasks if item["id"] in selected_release_ids],
+        [item for item in acceptances if item["release_task_id"] in selected_acceptance_release_ids],
+    )
+
+
+def _checklist_complete(value: str) -> bool:
+    lines = [line.strip().lower() for line in value.splitlines() if line.strip()]
+    checkbox_lines = [line for line in lines if line.startswith("- [")]
+    if not checkbox_lines:
+        return bool(value.strip())
+    return all(line.startswith("- [x]") for line in checkbox_lines)
