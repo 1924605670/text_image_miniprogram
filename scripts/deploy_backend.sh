@@ -34,8 +34,8 @@ APP_PORT="$APP_PORT"
 cd "\$APP_DIR"
 
 exec 9>"\$APP_DIR/.deploy.lock"
-if ! flock -n 9; then
-  echo "Another deployment is already running for \$APP_DIR"
+if ! flock -w 300 9; then
+  echo "Timed out waiting for another deployment to finish for \$APP_DIR"
   exit 1
 fi
 
