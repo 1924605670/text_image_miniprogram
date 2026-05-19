@@ -27,6 +27,9 @@ class GenerationService:
     ) -> dict:
         job_id = uuid.uuid4().hex
         final_prompt = compose_prompt(request)
+        user_id = request.client_user_id or None
+        if user_id:
+            self.store.consume_user_quota(user_id)
         job = self.store.create_job(
             job_id=job_id,
             prompt=request.prompt,
@@ -35,6 +38,7 @@ class GenerationService:
             model=self.settings.model,
             api_base_url=self.settings.api_base_url,
             parent_job_id=parent_job_id,
+            user_id=user_id,
         )
         task = asyncio.create_task(self._run_generation(job_id, request, final_prompt))
         self._tasks[job_id] = task
@@ -97,8 +101,10 @@ class GenerationService:
                     ensure_ascii=False,
                 ),
             )
+            self.store.refund_user_quota(request.client_user_id)
         except Exception as exc:
             self.store.update_job(job_id, status="failed", error=f"unexpected error: {exc}")
+            self.store.refund_user_quota(request.client_user_id)
 
     def _save_images(self, job_id: str, result: GenerateResult) -> list[dict[str, str | None]]:
         self.settings.output_dir.mkdir(parents=True, exist_ok=True)

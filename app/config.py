@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(PROJECT_ROOT / ".env", override=True)
+load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env.local")
 
 
 def _project_path(value: str) -> Path:
@@ -48,6 +49,26 @@ def _generation_url(base_url: str) -> str:
     return f"{base}/v1/images/generations"
 
 
+def _edit_url(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/images/edits"):
+        return base
+    if base.endswith("/images/generations"):
+        return f"{base.removesuffix('/images/generations')}/images/edits"
+    if base.endswith("/v1"):
+        return f"{base}/images/edits"
+    return f"{base}/v1/images/edits"
+
+
+def _chat_completions_url(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/chat/completions"):
+        return base
+    if base.endswith("/v1"):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
+
+
 def _masked_key(api_key: str) -> str:
     if not api_key.strip():
         return "missing"
@@ -61,13 +82,19 @@ class Settings:
     backup_api_base_url: str = os.getenv("IMAGE_BACKUP_API_BASE_URL", "").rstrip("/")
     backup_api_key: str = os.getenv("IMAGE_BACKUP_API_KEY", "")
     model: str = os.getenv("IMAGE_MODEL", "gpt-image-2")
+    llm_model: str = os.getenv("LLM_MODEL", "gpt-5.5")
     output_dir: Path = _project_path(os.getenv("IMAGE_OUTPUT_DIR", "generated"))
+    reference_dir: Path = _project_path(os.getenv("IMAGE_REFERENCE_DIR", "references"))
     database_path: Path = _project_path(os.getenv("IMAGE_DATABASE_PATH", "data/app.db"))
     retry_attempts: int = _int_env("IMAGE_RETRY_ATTEMPTS", 5)
     retry_base_delay_seconds: float = _float_env("IMAGE_RETRY_BASE_DELAY_SECONDS", 1.2)
     request_timeout_seconds: float = _float_env("IMAGE_REQUEST_TIMEOUT_SECONDS", 600.0)
-    use_streaming: bool = _bool_env("IMAGE_USE_STREAMING", True)
+    use_streaming: bool = _bool_env("IMAGE_USE_STREAMING", False)
     partial_images: int = _int_env("IMAGE_PARTIAL_IMAGES", 2)
+    image_base_url: str = os.getenv("IMAGE_PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    admin_token: str = os.getenv("ADMIN_TOKEN", "")
+    wechat_app_id: str = os.getenv("WECHAT_APP_ID", "")
+    wechat_app_secret: str = os.getenv("WECHAT_APP_SECRET", "")
 
     @property
     def has_api_key(self) -> bool:
@@ -93,7 +120,20 @@ class Settings:
     def backup_generation_url(self) -> str:
         return _generation_url(self.backup_api_base_url)
 
+    @property
+    def edit_url(self) -> str:
+        return _edit_url(self.api_base_url)
+
+    @property
+    def backup_edit_url(self) -> str:
+        return _edit_url(self.backup_api_base_url)
+
+    @property
+    def chat_completions_url(self) -> str:
+        return _chat_completions_url(self.api_base_url)
+
 
 settings = Settings()
 settings.output_dir.mkdir(parents=True, exist_ok=True)
+settings.reference_dir.mkdir(parents=True, exist_ok=True)
 settings.database_path.parent.mkdir(parents=True, exist_ok=True)

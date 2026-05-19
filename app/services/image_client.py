@@ -4,10 +4,12 @@ import asyncio
 import base64
 import binascii
 import json
+import mimetypes
 import random
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -50,6 +52,7 @@ class RequestOnceResult:
 class ImageProvider:
     name: str
     generation_url: str
+    edit_url: str
     api_key: str
 
 
@@ -75,6 +78,7 @@ class ImageClient:
             raise ImageProviderError("IMAGE_API_KEY is missing")
 
         payload = self._payload(request, final_prompt)
+        reference_path = self._reference_path(request)
         attempt_log: list[AttemptLog] = []
         started = time.perf_counter()
         timeout = httpx.Timeout(self.settings.request_timeout_seconds, connect=30.0)
@@ -91,6 +95,7 @@ class ImageClient:
                         provider,
                         payload,
                         request.output_format,
+                        reference_path=reference_path,
                     )
                 except httpx.RequestError as exc:
                     duration_ms = _elapsed_ms(attempt_started)
@@ -169,7 +174,18 @@ class ImageClient:
         provider: ImageProvider,
         payload: dict[str, Any],
         fallback_extension: str,
+        *,
+        reference_path: Path | None = None,
     ) -> RequestOnceResult:
+        if reference_path is not None:
+            return await self._request_edit(
+                client,
+                provider,
+                payload,
+                reference_path,
+                fallback_extension,
+            )
+
         if not self.settings.use_streaming:
             return await self._request_json(client, provider, payload, fallback_extension)
 
@@ -196,7 +212,7 @@ class ImageClient:
     ) -> RequestOnceResult:
         response = await client.post(
             provider.generation_url,
-            headers=self._headers(provider),
+            headers=self._json_headers(provider),
             json=payload,
         )
         if response.status_code >= 400:
@@ -225,7 +241,7 @@ class ImageClient:
         async with client.stream(
             "POST",
             provider.generation_url,
-            headers=self._headers(provider),
+            headers=self._json_headers(provider),
             json=payload,
         ) as response:
             if response.status_code >= 400:
@@ -293,6 +309,54 @@ class ImageClient:
                 raise ImageProviderError("provider stream completed without an image")
             return RequestOnceResult(images=images, usage=usage, transport="stream")
 
+    async def _request_edit(
+        self,
+        client: httpx.AsyncClient,
+        provider: ImageProvider,
+        payload: dict[str, Any],
+        reference_path: Path,
+        fallback_extension: str,
+    ) -> RequestOnceResult:
+        form_data = {
+            key: str(value)
+            for key, value in {
+                **payload,
+                "prompt": _reference_prompt(str(payload["prompt"])),
+            }.items()
+            if value is not None
+        }
+        files = [
+            (
+                "image[]",
+                (
+                    reference_path.name,
+                    reference_path.read_bytes(),
+                    _image_mime_type(reference_path),
+                ),
+            )
+        ]
+        response = await client.post(
+            provider.edit_url,
+            headers=self._multipart_headers(provider),
+            data=form_data,
+            files=files,
+        )
+        if response.status_code >= 400:
+            raise ImageProviderError(
+                _response_error_message(response),
+                status_code=response.status_code,
+            )
+
+        payload_json = _safe_json(response)
+        images = await self._extract_images(client, payload_json, fallback_extension)
+        if not images:
+            raise ImageProviderError("provider returned no images")
+        return RequestOnceResult(
+            images=images,
+            usage=payload_json.get("usage") if isinstance(payload_json, dict) else None,
+            transport="edit",
+        )
+
     def _payload(self, request: GenerationRequest, final_prompt: str) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.settings.model,
@@ -307,11 +371,20 @@ class ImageClient:
             payload["output_compression"] = request.output_compression
         return payload
 
+    def _reference_path(self, request: GenerationRequest) -> Path | None:
+        if not request.reference_image:
+            return None
+        reference_path = self.settings.reference_dir / Path(request.reference_image).name
+        if not reference_path.exists():
+            raise ImageProviderError("reference image not found")
+        return reference_path
+
     def _providers(self) -> list[ImageProvider]:
         providers = [
             ImageProvider(
                 name="primary",
                 generation_url=self.settings.generation_url,
+                edit_url=self.settings.edit_url,
                 api_key=self.settings.api_key,
             )
         ]
@@ -320,16 +393,23 @@ class ImageClient:
                 ImageProvider(
                     name="backup",
                     generation_url=self.settings.backup_generation_url,
+                    edit_url=self.settings.backup_edit_url,
                     api_key=self.settings.backup_api_key,
                 )
             )
         return providers
 
-    def _headers(self, provider: ImageProvider) -> dict[str, str]:
+    def _json_headers(self, provider: ImageProvider) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {provider.api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
+        }
+
+    def _multipart_headers(self, provider: ImageProvider) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {provider.api_key}",
+            "Accept": "application/json",
         }
 
     async def _extract_images(
@@ -380,6 +460,21 @@ class ImageClient:
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _reference_prompt(prompt: str) -> str:
+    return (
+        f"{prompt}\n\n"
+        "Use the uploaded reference image as the visual reference. "
+        "Preserve its main subject, identity, composition cues, and style unless the user explicitly asks otherwise."
+    )
+
+
+def _image_mime_type(path: Path) -> str:
+    mime_type, _ = mimetypes.guess_type(path.name)
+    if not mime_type or not mime_type.startswith("image/"):
+        return "image/png"
+    return mime_type
 
 
 def _safe_json(response: httpx.Response) -> dict[str, Any]:

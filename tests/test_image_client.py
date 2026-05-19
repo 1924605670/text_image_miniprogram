@@ -48,8 +48,10 @@ def test_stored_raw_504_error_is_sanitized() -> None:
 class DummySettings:
     api_key = "test-key"
     generation_url = "https://example.test/v1/images/generations"
+    edit_url = "https://example.test/v1/images/edits"
     backup_api_key = ""
     backup_generation_url = ""
+    backup_edit_url = ""
     backup_has_api_key = False
     has_api_key = True
     model = "gpt-image-2"

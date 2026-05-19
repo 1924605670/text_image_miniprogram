@@ -1,0 +1,64 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install rsync
+        run: sudo apt-get update && sudo apt-get install -y rsync
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          {
+            echo "Host text-image-server"
+            echo "  HostName ${DEPLOY_HOST:-111.229.10.122}"
+            echo "  User ubuntu"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking accept-new"
+          } >> ~/.ssh/config
+
+      - name: Deploy backend
+        env:
+          DEPLOY_HOST: text-image-server
+          DEPLOY_USER: ubuntu
+          APP_DIR: /home/ubuntu/apps/text_image_backend
+          APP_PORT: "18090"
+        run: bash scripts/deploy_backend.sh

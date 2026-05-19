@@ -9,101 +9,254 @@
     <script src="/static/app.js" defer></script>
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="panel composer">
-        <div class="brand-row">
+    <div class="product-shell">
+      <header class="topbar">
+        <div class="brand-mark">
           <div>
-            <p class="eyebrow">Text Image Demo</p>
-            <h1>文生图工作台</h1>
+            <p class="eyebrow">Mini Program Studio</p>
+            <h1>小程序测试版工作台</h1>
           </div>
-          <span id="healthBadge" class="status-dot">检查中</span>
         </div>
-
-        <form id="generationForm" class="stack">
-          <label class="field">
-            <span>提示词</span>
-            <textarea name="prompt" rows="9" maxlength="4000" required placeholder="主体、场景、构图、光线、材质"></textarea>
-          </label>
-
-          <div class="field">
-            <span>风格</span>
-            <div id="styleButtons" class="segmented"></div>
-          </div>
-
-          <label class="field">
-            <span>负面提示词</span>
-            <textarea name="negative_prompt" rows="3" maxlength="1200" placeholder="不想出现的元素"></textarea>
-          </label>
-
-          <div class="grid-2">
-            <label class="field">
-              <span>尺寸</span>
-              <select name="size" id="sizeSelect"></select>
-            </label>
-            <label class="field">
-              <span>质量</span>
-              <select name="quality" id="qualitySelect"></select>
-            </label>
-          </div>
-
-          <div class="grid-3">
-            <label class="field">
-              <span>格式</span>
-              <select name="output_format" id="formatSelect"></select>
-            </label>
-            <label class="field">
-              <span>压缩</span>
-              <input name="output_compression" type="number" min="0" max="100" placeholder="auto" />
-            </label>
-            <label class="field">
-              <span>张数</span>
-              <input name="n" type="number" min="1" max="4" value="1" />
-            </label>
-          </div>
-
-          <label class="field">
-            <span>背景</span>
-            <select name="background" id="backgroundSelect"></select>
-          </label>
-
-          <button class="primary-action" type="submit">
-            <i data-lucide="wand-sparkles"></i>
-            <span>生成</span>
+        <nav class="mode-switch" aria-label="工作区切换">
+          <button class="active" type="button" data-view="workflowView">
+            <i data-lucide="kanban-square"></i>
+            <span>发布流</span>
           </button>
-        </form>
-      </aside>
-
-      <main class="workspace">
-        <section class="toolbar">
-          <div>
-            <p class="eyebrow">Provider</p>
-            <h2 id="providerTitle">gpt-image-2</h2>
-          </div>
-          <div class="toolbar-actions">
-            <button id="refreshHistory" class="icon-button" type="button" title="刷新历史">
-              <i data-lucide="refresh-cw"></i>
-            </button>
-          </div>
-        </section>
-
-        <section id="resultPanel" class="result-panel idle">
-          <div class="empty-state">
+          <button type="button" data-view="imageView">
             <i data-lucide="image"></i>
-            <h2>等待生成</h2>
-          </div>
-        </section>
-      </main>
+            <span>图片生成</span>
+          </button>
+        </nav>
+        <span id="healthBadge" class="status-dot">检查中</span>
+      </header>
 
-      <aside class="panel history-panel">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">History</p>
-            <h2>最近任务</h2>
-          </div>
+      <section id="workflowView" class="view-pane workflow-screen active">
+        <section class="metrics-strip" aria-label="流程概览">
+          <article>
+            <span id="metricRequirements">0</span>
+            <p>需求池</p>
+          </article>
+          <article>
+            <span id="metricDevelopment">0</span>
+            <p>开发任务</p>
+          </article>
+          <article>
+            <span id="metricTesting">0</span>
+            <p>测试任务</p>
+          </article>
+          <article>
+            <span id="metricRelease">0</span>
+            <p>测试版发布</p>
+          </article>
+          <article>
+            <span id="metricAcceptance">0</span>
+            <p>已验收</p>
+          </article>
+        </section>
+
+        <div class="workflow-layout">
+          <aside class="panel workflow-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Product</p>
+                <h2>产品规划</h2>
+              </div>
+            </div>
+            <form id="requirementForm" class="stack">
+              <label class="field">
+                <span>需求标题</span>
+                <input name="title" maxlength="120" required placeholder="例如：图片历史二次编辑" />
+              </label>
+              <label class="field">
+                <span>业务目标</span>
+                <textarea name="business_goal" rows="3" maxlength="1200" required placeholder="说明要解决的业务问题"></textarea>
+              </label>
+              <label class="field">
+                <span>功能范围</span>
+                <textarea name="scope" rows="4" maxlength="2000" required placeholder="列出本次测试版要交付的范围"></textarea>
+              </label>
+              <label class="field">
+                <span>验收标准</span>
+                <textarea name="acceptance_criteria" rows="4" maxlength="2000" required placeholder="写清楚可验收的结果"></textarea>
+              </label>
+              <div class="grid-2">
+                <label class="field">
+                  <span>优先级</span>
+                  <select name="priority">
+                    <option value="high">高</option>
+                    <option value="urgent">紧急</option>
+                    <option value="medium">中</option>
+                    <option value="low">低</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>目标版本</span>
+                  <input name="expected_version" maxlength="80" placeholder="0.2.0-test" />
+                </label>
+              </div>
+              <button class="primary-action" type="submit">
+                <i data-lucide="plus"></i>
+                <span>加入需求池</span>
+              </button>
+            </form>
+
+            <div class="defaults-box">
+              <div class="section-head compact">
+                <div>
+                  <p class="eyebrow">Team</p>
+                  <h2>执行默认值</h2>
+                </div>
+              </div>
+              <div class="grid-2">
+                <label class="field">
+                  <span>开发</span>
+                  <input id="defaultDeveloper" value="dev" />
+                </label>
+                <label class="field">
+                  <span>测试</span>
+                  <input id="defaultTester" value="qa" />
+                </label>
+              </div>
+              <div class="grid-2">
+                <label class="field">
+                  <span>运维</span>
+                  <input id="defaultOperator" value="ops" />
+                </label>
+                <label class="field">
+                  <span>版本号</span>
+                  <input id="defaultVersion" value="0.2.0-test" />
+                </label>
+              </div>
+            </div>
+          </aside>
+
+          <main class="workflow-board" id="workflowBoard">
+            <section class="board-column">
+              <div class="column-title">
+                <i data-lucide="clipboard-list"></i>
+                <h2>需求确认</h2>
+              </div>
+              <div id="requirementList" class="workflow-list"></div>
+            </section>
+            <section class="board-column">
+              <div class="column-title">
+                <i data-lucide="code-2"></i>
+                <h2>开发自测</h2>
+              </div>
+              <div id="developmentList" class="workflow-list"></div>
+            </section>
+            <section class="board-column">
+              <div class="column-title">
+                <i data-lucide="test-tube-2"></i>
+                <h2>测试闭环</h2>
+              </div>
+              <div id="testList" class="workflow-list"></div>
+            </section>
+            <section class="board-column">
+              <div class="column-title">
+                <i data-lucide="rocket"></i>
+                <h2>发布验收</h2>
+              </div>
+              <div id="releaseList" class="workflow-list"></div>
+            </section>
+          </main>
         </div>
-        <div id="historyList" class="history-list"></div>
-      </aside>
+      </section>
+
+      <section id="imageView" class="view-pane app-shell">
+        <aside class="panel composer">
+          <div class="brand-row">
+            <div>
+              <p class="eyebrow">Image Lab</p>
+              <h1>文生图工作台</h1>
+            </div>
+          </div>
+
+          <form id="generationForm" class="stack">
+            <label class="field">
+              <span>提示词</span>
+              <textarea name="prompt" rows="9" maxlength="4000" required placeholder="主体、场景、构图、光线、材质"></textarea>
+            </label>
+
+            <div class="field">
+              <span>风格</span>
+              <div id="styleButtons" class="segmented"></div>
+            </div>
+
+            <label class="field">
+              <span>负面提示词</span>
+              <textarea name="negative_prompt" rows="3" maxlength="1200" placeholder="不想出现的元素"></textarea>
+            </label>
+
+            <div class="grid-2">
+              <label class="field">
+                <span>尺寸</span>
+                <select name="size" id="sizeSelect"></select>
+              </label>
+              <label class="field">
+                <span>质量</span>
+                <select name="quality" id="qualitySelect"></select>
+              </label>
+            </div>
+
+            <div class="grid-3">
+              <label class="field">
+                <span>格式</span>
+                <select name="output_format" id="formatSelect"></select>
+              </label>
+              <label class="field">
+                <span>压缩</span>
+                <input name="output_compression" type="number" min="0" max="100" placeholder="auto" />
+              </label>
+              <label class="field">
+                <span>张数</span>
+                <input name="n" type="number" min="1" max="4" value="1" />
+              </label>
+            </div>
+
+            <label class="field">
+              <span>背景</span>
+              <select name="background" id="backgroundSelect"></select>
+            </label>
+
+            <button class="primary-action" type="submit">
+              <i data-lucide="wand-sparkles"></i>
+              <span>生成</span>
+            </button>
+          </form>
+        </aside>
+
+        <main class="workspace">
+          <section class="toolbar">
+            <div>
+              <p class="eyebrow">Provider</p>
+              <h2 id="providerTitle">gpt-image-2</h2>
+            </div>
+            <div class="toolbar-actions">
+              <button id="refreshHistory" class="icon-button" type="button" title="刷新历史">
+                <i data-lucide="refresh-cw"></i>
+              </button>
+            </div>
+          </section>
+
+          <section id="resultPanel" class="result-panel idle">
+            <div class="empty-state">
+              <i data-lucide="image"></i>
+              <h2>等待生成</h2>
+            </div>
+          </section>
+        </main>
+
+        <aside class="panel history-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">History</p>
+              <h2>最近任务</h2>
+            </div>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </aside>
+      </section>
     </div>
   </body>
 </html>
-

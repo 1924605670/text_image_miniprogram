@@ -2,37 +2,59 @@ const state = {
   activeJobId: null,
   pollTimer: null,
   selectedStyle: "cinematic",
+  workflow: null,
 };
 
 const form = document.querySelector("#generationForm");
+const requirementForm = document.querySelector("#requirementForm");
 const resultPanel = document.querySelector("#resultPanel");
 const historyList = document.querySelector("#historyList");
 const healthBadge = document.querySelector("#healthBadge");
 const providerTitle = document.querySelector("#providerTitle");
 const refreshHistory = document.querySelector("#refreshHistory");
+const workflowBoard = document.querySelector("#workflowBoard");
 
 document.addEventListener("DOMContentLoaded", async () => {
-  await Promise.all([loadHealth(), loadOptions(), loadHistory()]);
+  await Promise.all([loadHealth(), loadOptions(), loadHistory(), loadWorkflow()]);
   restoreDraft();
   wireEvents();
   window.lucide?.createIcons();
 });
 
 function wireEvents() {
+  document.querySelectorAll("[data-view]").forEach((button) => {
+    button.addEventListener("click", () => switchView(button.dataset.view));
+  });
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     saveDraft();
     await createGeneration();
   });
 
+  requirementForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await createRequirement();
+  });
+
   form.addEventListener("input", saveDraft);
   refreshHistory.addEventListener("click", loadHistory);
+  workflowBoard.addEventListener("click", handleWorkflowAction);
 
   document.querySelector("#formatSelect").addEventListener("change", (event) => {
     const compression = form.elements.output_compression;
     const enabled = ["jpeg", "webp"].includes(event.target.value);
     compression.disabled = !enabled;
     if (!enabled) compression.value = "";
+  });
+}
+
+function switchView(viewId) {
+  document.querySelectorAll(".view-pane").forEach((pane) => {
+    pane.classList.toggle("active", pane.id === viewId);
+  });
+  document.querySelectorAll("[data-view]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.view === viewId);
   });
 }
 
@@ -56,6 +78,344 @@ async function loadOptions() {
   fillSelect("#qualitySelect", options.qualities, null, null, "auto");
   fillSelect("#formatSelect", options.formats, null, null, "png");
   fillSelect("#backgroundSelect", options.backgrounds, null, null, "auto");
+}
+
+async function loadWorkflow() {
+  try {
+    state.workflow = await api("/api/workflow/board");
+    renderWorkflow();
+  } catch (error) {
+    renderWorkflowError(error.message);
+  }
+}
+
+async function createRequirement() {
+  const data = new FormData(requirementForm);
+  const payload = {
+    title: String(data.get("title") || "").trim(),
+    background: "",
+    business_goal: String(data.get("business_goal") || "").trim(),
+    priority: String(data.get("priority") || "high"),
+    scope: String(data.get("scope") || "").trim(),
+    acceptance_criteria: String(data.get("acceptance_criteria") || "").trim(),
+    expected_version: String(data.get("expected_version") || "").trim(),
+  };
+  setRequirementBusy(true);
+  try {
+    await api("/api/workflow/requirements", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    requirementForm.reset();
+    requirementForm.elements.priority.value = "high";
+    await loadWorkflow();
+  } catch (error) {
+    renderWorkflowToast(error.message);
+  } finally {
+    setRequirementBusy(false);
+  }
+}
+
+async function handleWorkflowAction(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const { action, id } = button.dataset;
+  button.disabled = true;
+  try {
+    await runWorkflowAction(action, id);
+    await loadWorkflow();
+  } catch (error) {
+    renderWorkflowToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function runWorkflowAction(action, id) {
+  if (action === "confirm-requirement") {
+    return api(`/api/workflow/requirements/${id}/confirm`, { method: "POST" });
+  }
+  if (action === "pause-requirement") {
+    return api(`/api/workflow/requirements/${id}/pause`, { method: "POST" });
+  }
+  if (action === "create-dev") {
+    const requirement = findRequirement(id);
+    return api("/api/workflow/development-tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        requirement_id: id,
+        title: `${requirement.title}开发实现`,
+        description: requirement.scope,
+        developer: workflowDefault("defaultDeveloper", "dev"),
+      }),
+    });
+  }
+  if (action === "start-dev") {
+    return api(`/api/workflow/development-tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "in_progress" }),
+    });
+  }
+  if (action === "submit-dev") {
+    return api(`/api/workflow/development-tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "submitted_to_test",
+        self_test_notes: "开发自测通过：主流程、异常输入、接口错误提示均已覆盖。",
+        commit_notes: "本地工作区改动已完成，待测试回归。",
+      }),
+    });
+  }
+  if (action === "create-test") {
+    const development = findDevelopment(id);
+    const requirement = findRequirement(development.requirement_id);
+    return api("/api/workflow/test-tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        development_task_id: id,
+        tester: workflowDefault("defaultTester", "qa"),
+        test_cases: requirement.acceptance_criteria || "覆盖需求验收标准和关键回归路径",
+      }),
+    });
+  }
+  if (action === "start-test") {
+    return api(`/api/workflow/test-tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "in_progress" }),
+    });
+  }
+  if (action === "pass-test") {
+    return api(`/api/workflow/test-tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "passed",
+        result_notes: "测试通过：验收标准、核心回归、小程序兼容性检查通过。",
+      }),
+    });
+  }
+  if (action === "fail-test") {
+    return api(`/api/workflow/test-tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "failed",
+        defect_notes: "测试未通过：需开发修复后重新提交测试。",
+      }),
+    });
+  }
+  if (action === "create-release") {
+    return api("/api/workflow/release-tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        test_task_id: id,
+        operator: workflowDefault("defaultOperator", "ops"),
+        version: workflowDefault("defaultVersion", "0.2.0-test"),
+        release_notes: "服务器部署并提交微信小程序测试版本。",
+        rollback_notes: "如测试版异常，回退到上一稳定测试版本。",
+      }),
+    });
+  }
+  if (action === "start-release") {
+    return api(`/api/workflow/release-tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "in_progress" }),
+    });
+  }
+  if (action === "submit-release") {
+    return api(`/api/workflow/release-tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "submitted_test_version",
+        server_deploy_result: "服务器部署完成，健康检查通过。",
+        mini_program_test_result: "小程序测试版本提交成功，等待产品验收。",
+      }),
+    });
+  }
+  if (action === "accept-release") {
+    return api(`/api/workflow/release-tasks/${id}/acceptance`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "accepted", notes: "产品验收通过。" }),
+    });
+  }
+  if (action === "reject-release") {
+    return api(`/api/workflow/release-tasks/${id}/acceptance`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "rejected", notes: "产品验收未通过，需补齐遗留问题。" }),
+    });
+  }
+}
+
+function renderWorkflow() {
+  const board = state.workflow || emptyWorkflow();
+  document.querySelector("#metricRequirements").textContent = board.requirements.length;
+  document.querySelector("#metricDevelopment").textContent = board.development_tasks.length;
+  document.querySelector("#metricTesting").textContent = board.test_tasks.length;
+  document.querySelector("#metricRelease").textContent = board.release_tasks.filter(
+    (item) => item.status === "submitted_test_version",
+  ).length;
+  document.querySelector("#metricAcceptance").textContent = board.acceptances.filter(
+    (item) => item.status === "accepted",
+  ).length;
+
+  renderWorkflowList("#requirementList", board.requirements, requirementCard);
+  renderWorkflowList("#developmentList", board.development_tasks, developmentCard);
+  renderWorkflowList("#testList", board.test_tasks, testCard);
+  renderWorkflowList("#releaseList", board.release_tasks, releaseCard);
+  window.lucide?.createIcons();
+}
+
+function renderWorkflowList(selector, items, renderer) {
+  const list = document.querySelector(selector);
+  list.innerHTML = items.length ? items.map(renderer).join("") : `<div class="workflow-empty">暂无记录</div>`;
+}
+
+function requirementCard(item) {
+  const hasDevelopment = state.workflow.development_tasks.some((task) => task.requirement_id === item.id);
+  return `
+    <article class="workflow-card priority-${item.priority}">
+      <div class="workflow-card-head">
+        <strong>${escapeHtml(item.title)}</strong>
+        <span class="pill ${item.status}">${requirementStatusText(item.status)}</span>
+      </div>
+      <p>${escapeHtml(item.business_goal)}</p>
+      <dl>
+        <div><dt>范围</dt><dd>${escapeHtml(item.scope)}</dd></div>
+        <div><dt>验收</dt><dd>${escapeHtml(item.acceptance_criteria)}</dd></div>
+      </dl>
+      <div class="card-actions">
+        ${item.status !== "confirmed" ? actionButton("confirm-requirement", item.id, "check", "确认") : ""}
+        ${item.status === "confirmed" && !hasDevelopment ? actionButton("create-dev", item.id, "code-2", "拆开发") : ""}
+        ${item.status !== "paused" ? actionButton("pause-requirement", item.id, "pause", "暂缓") : ""}
+      </div>
+    </article>
+  `;
+}
+
+function developmentCard(item) {
+  const requirement = findRequirement(item.requirement_id);
+  const hasTest = state.workflow.test_tasks.some((task) => task.development_task_id === item.id);
+  return `
+    <article class="workflow-card">
+      <div class="workflow-card-head">
+        <strong>${escapeHtml(item.title)}</strong>
+        <span class="pill ${item.status}">${developmentStatusText(item.status)}</span>
+      </div>
+      <p>${escapeHtml(requirement.title)} · ${escapeHtml(item.developer)}</p>
+      <dl>
+        <div><dt>任务</dt><dd>${escapeHtml(item.description)}</dd></div>
+        ${item.self_test_notes ? `<div><dt>自测</dt><dd>${escapeHtml(item.self_test_notes)}</dd></div>` : ""}
+      </dl>
+      <div class="card-actions">
+        ${item.status === "pending" ? actionButton("start-dev", item.id, "play", "开始") : ""}
+        ${item.status !== "submitted_to_test" ? actionButton("submit-dev", item.id, "send", "提测") : ""}
+        ${item.status === "submitted_to_test" && !hasTest ? actionButton("create-test", item.id, "test-tube-2", "建测试") : ""}
+      </div>
+    </article>
+  `;
+}
+
+function testCard(item) {
+  const development = findDevelopment(item.development_task_id);
+  const hasRelease = state.workflow.release_tasks.some((task) => task.test_task_id === item.id);
+  return `
+    <article class="workflow-card">
+      <div class="workflow-card-head">
+        <strong>${escapeHtml(development.title)}</strong>
+        <span class="pill ${item.status}">${testStatusText(item.status)}</span>
+      </div>
+      <p>${escapeHtml(item.tester)} · ${escapeHtml(findRequirement(item.requirement_id).title)}</p>
+      <dl>
+        <div><dt>用例</dt><dd>${escapeHtml(item.test_cases)}</dd></div>
+        ${item.result_notes ? `<div><dt>结果</dt><dd>${escapeHtml(item.result_notes)}</dd></div>` : ""}
+        ${item.defect_notes ? `<div><dt>缺陷</dt><dd>${escapeHtml(item.defect_notes)}</dd></div>` : ""}
+      </dl>
+      <div class="card-actions">
+        ${item.status === "pending" ? actionButton("start-test", item.id, "play", "开始") : ""}
+        ${item.status !== "passed" ? actionButton("pass-test", item.id, "check", "通过") : ""}
+        ${item.status !== "passed" ? actionButton("fail-test", item.id, "x", "失败") : ""}
+        ${item.status === "passed" && !hasRelease ? actionButton("create-release", item.id, "rocket", "建发布") : ""}
+      </div>
+    </article>
+  `;
+}
+
+function releaseCard(item) {
+  const testTask = findTest(item.test_task_id);
+  const acceptance = state.workflow.acceptances.find((entry) => entry.release_task_id === item.id);
+  return `
+    <article class="workflow-card">
+      <div class="workflow-card-head">
+        <strong>${escapeHtml(item.version || "测试版本")}</strong>
+        <span class="pill ${item.status}">${releaseStatusText(item.status)}</span>
+      </div>
+      <p>${escapeHtml(item.operator)} · ${escapeHtml(findRequirement(testTask.requirement_id).title)}</p>
+      <dl>
+        <div><dt>发布说明</dt><dd>${escapeHtml(item.release_notes || "待记录")}</dd></div>
+        ${item.server_deploy_result ? `<div><dt>服务</dt><dd>${escapeHtml(item.server_deploy_result)}</dd></div>` : ""}
+        ${item.mini_program_test_result ? `<div><dt>测试版</dt><dd>${escapeHtml(item.mini_program_test_result)}</dd></div>` : ""}
+        ${acceptance ? `<div><dt>验收</dt><dd>${acceptanceStatusText(acceptance.status)} ${escapeHtml(acceptance.notes)}</dd></div>` : ""}
+      </dl>
+      <div class="card-actions">
+        ${item.status === "pending" ? actionButton("start-release", item.id, "play", "发布") : ""}
+        ${item.status !== "submitted_test_version" ? actionButton("submit-release", item.id, "upload-cloud", "提交测试版") : ""}
+        ${item.status === "submitted_test_version" ? actionButton("accept-release", item.id, "check", "验收通过") : ""}
+        ${item.status === "submitted_test_version" ? actionButton("reject-release", item.id, "x", "验收驳回") : ""}
+      </div>
+    </article>
+  `;
+}
+
+function actionButton(action, id, icon, label) {
+  return `
+    <button class="secondary-action compact-action" type="button" data-action="${action}" data-id="${id}">
+      <i data-lucide="${icon}"></i><span>${label}</span>
+    </button>
+  `;
+}
+
+function renderWorkflowError(message) {
+  ["#requirementList", "#developmentList", "#testList", "#releaseList"].forEach((selector) => {
+    document.querySelector(selector).innerHTML = `<div class="error-box">${escapeHtml(message)}</div>`;
+  });
+}
+
+function renderWorkflowToast(message) {
+  const list = document.querySelector("#requirementList");
+  list.insertAdjacentHTML("afterbegin", `<div class="error-box">${escapeHtml(message)}</div>`);
+}
+
+function findRequirement(id) {
+  return state.workflow.requirements.find((item) => item.id === id) || { title: "未知需求", scope: "" };
+}
+
+function findDevelopment(id) {
+  return (
+    state.workflow.development_tasks.find((item) => item.id === id) || {
+      title: "未知开发任务",
+      requirement_id: "",
+    }
+  );
+}
+
+function findTest(id) {
+  return state.workflow.test_tasks.find((item) => item.id === id) || { requirement_id: "" };
+}
+
+function workflowDefault(id, fallback) {
+  return document.querySelector(`#${id}`)?.value.trim() || fallback;
+}
+
+function setRequirementBusy(busy) {
+  requirementForm.querySelector("button[type='submit']").disabled = busy;
+}
+
+function emptyWorkflow() {
+  return {
+    requirements: [],
+    development_tasks: [],
+    test_tasks: [],
+    release_tasks: [],
+    acceptances: [],
+  };
 }
 
 function renderStyles(styles) {
@@ -308,6 +668,52 @@ function statusText(status) {
     running: "生成中",
     succeeded: "成功",
     failed: "失败",
+  }[status] || status;
+}
+
+function requirementStatusText(status) {
+  return {
+    draft: "草稿",
+    pending_confirmation: "待确认",
+    confirmed: "已确认",
+    paused: "暂缓",
+  }[status] || status;
+}
+
+function developmentStatusText(status) {
+  return {
+    pending: "待开发",
+    in_progress: "开发中",
+    pending_self_test: "待自测",
+    self_test_passed: "自测通过",
+    submitted_to_test: "已提测",
+  }[status] || status;
+}
+
+function testStatusText(status) {
+  return {
+    pending: "待测试",
+    in_progress: "测试中",
+    failed: "测试失败",
+    retesting: "复测中",
+    passed: "测试通过",
+  }[status] || status;
+}
+
+function releaseStatusText(status) {
+  return {
+    pending: "待发布",
+    in_progress: "发布中",
+    submitted_test_version: "已提交测试版",
+    failed: "发布失败",
+  }[status] || status;
+}
+
+function acceptanceStatusText(status) {
+  return {
+    pending: "待验收",
+    accepted: "验收通过",
+    rejected: "验收驳回",
   }[status] || status;
 }
 
