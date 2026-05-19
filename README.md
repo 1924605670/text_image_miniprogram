@@ -156,8 +156,8 @@ ssh ubuntu@111.229.10.122 'curl -fsS -X POST http://127.0.0.1:18090/api/auth/log
 - SQLite 会在服务启动时自动补列，适配服务器已有数据库。
 - 提交测试版前必须记录服务器部署结果、小程序测试版提交结果，并完成发布检查清单。
 - 验收驳回必须记录阻塞原因。
-- 2026-05-20 二期版本验收工作台已通过 CI/CD 同步到服务器，备份：`/home/ubuntu/apps/text_image_backend/backups/cicd-20260520024906`，当前服务 PID：`503493`，验证通过：`/`、`/api/health`、`/api/workflow/board?version=0.2.0`。
-- 同次部署发现 CI/CD 在重启阶段存在端口释放竞态，已更新 `scripts/deploy_backend.sh`：增加 `.deploy.lock` 部署锁，停止旧进程后等待 `18090` 端口真正释放，再启动并轮询健康检查。
+- 2026-05-20 二期版本验收工作台已通过 CI/CD 同步到服务器，备份：`/home/ubuntu/apps/text_image_backend/backups/cicd-20260520024906`，验证通过：`/`、`/api/health`、`/api/workflow/board?version=0.2.0`。
+- 同次部署发现 CI/CD 在重启阶段存在端口释放竞态，已更新 `scripts/deploy_backend.sh`：增加 `.deploy.lock` 部署锁，停止旧进程后等待 `18090` 端口真正释放，再启动并轮询健康检查。修复后的 CI/CD 已成功，最新备份：`/home/ubuntu/apps/text_image_backend/backups/cicd-20260520025406`。
 
 ## GitHub CI/CD
 
