@@ -167,3 +167,33 @@ async def test_post_chat_falls_back_after_empty_stream(monkeypatch) -> None:
     )
 
     assert content == '{"ok":true}'
+
+
+async def test_generate_toutiao_package_uses_conservative_fallback(monkeypatch) -> None:
+    class DummySettings:
+        has_api_key = True
+        api_key = "test-key"
+        llm_model = "gpt-5.5"
+        llm_fallback_models = ("minimaxai/minimax-m2.7",)
+
+    async def fail_chat(*args, **kwargs) -> str:
+        raise ToutiaoPackageError("provider request timed out")
+
+    client = LLMClient(DummySettings())
+    monkeypatch.setattr(client, "_post_chat_with_fallback", fail_chat)
+
+    package = await client.generate_toutiao_package(
+        ToutiaoPackageRequest(
+            topic="社区智慧健身设施升级",
+            facts="某社区近期新增一批智能健身器材。居民反馈早晚使用人数增加，但部分设备还需要加强使用指引和维护巡检。",
+            angle="从居民日常健身便利性切入。",
+            article_style="local",
+            length="short",
+            cover_style="local",
+        )
+    )
+
+    assert "社区智慧健身设施升级" in package.lead
+    assert package.image_prompt
+    assert "保守模板兜底" in package.compliance_notes[0]
+    assert "provider request timed out" in package.fact_check_notes[1]

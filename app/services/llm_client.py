@@ -46,16 +46,18 @@ class LLMClient:
         if not self.settings.has_api_key:
             raise ToutiaoPackageError("IMAGE_API_KEY is missing")
 
-        content = await self._post_chat_with_fallback(
-            self._toutiao_payload(req),
-            "llm toutiao package failed",
-            ToutiaoPackageError,
-        )
-        data = _extract_json_object(content)
         try:
+            content = await self._post_chat_with_fallback(
+                self._toutiao_payload(req),
+                "llm toutiao package failed",
+                ToutiaoPackageError,
+            )
+            data = _extract_json_object(content)
             return ToutiaoPackageOut.model_validate(data)
         except Exception as exc:
-            raise ToutiaoPackageError("llm toutiao package returned invalid structure") from exc
+            if isinstance(exc, ToutiaoPackageError):
+                return _fallback_toutiao_package(req, str(exc))
+            return _fallback_toutiao_package(req, "llm toutiao package returned invalid structure")
 
     async def _post_chat_with_fallback(
         self,
@@ -332,6 +334,92 @@ def _extract_json_object(content: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ToutiaoPackageError("llm toutiao package returned non-object JSON")
     return parsed
+
+
+def _fallback_toutiao_package(req: ToutiaoPackageRequest, reason: str) -> ToutiaoPackageOut:
+    topic = _trim_sentence(req.topic, 42)
+    facts = _trim_sentence(req.facts, 420)
+    angle = req.angle or "从读者最关心的变化和影响切入"
+    audience = req.audience or "今日头条普通读者"
+    fact_sentences = _split_fact_sentences(req.facts)
+    bullets = [_trim_sentence(item, 80) for item in fact_sentences[:3]]
+    if len(bullets) < 3:
+        bullets.append(_trim_sentence(f"报道角度聚焦：{angle}", 80))
+    if len(bullets) < 3:
+        bullets.append("发布前建议补充明确来源、时间、地点和责任方。")
+
+    title_seed = _trim_sentence(topic, 22)
+    best_title = _trim_sentence(f"{title_seed}带来哪些新变化", 32)
+    title_options = [
+        best_title,
+        _trim_sentence(f"{title_seed}这些进展值得关注", 32),
+        _trim_sentence(f"围绕{title_seed}读者关心这几点", 32),
+    ]
+
+    lead = _trim_sentence(
+        f"围绕{topic}，现有材料显示：{fact_sentences[0] if fact_sentences else facts}",
+        220,
+    )
+    body = (
+        f"围绕{topic}，现有材料显示：{facts}\n\n"
+        f"从{angle}看，这一选题适合先交代已经发生的变化，再说明对{audience}的直接影响。"
+        "写作时应把确定事实、用户反馈和后续计划分开表达，避免把尚未落地的安排写成结果。\n\n"
+        "后续发布前，建议继续补充具体时间、地点、责任方或公开来源。"
+        "如果材料暂时不足，正文应使用'据现有材料'、'后续仍需观察'等稳健表述。"
+    )
+    cover_brief = _trim_sentence(
+        f"围绕{topic}制作新闻图文封面，突出与事实材料一致的真实生活或行业场景。",
+        260,
+    )
+    image_prompt = _trim_sentence(
+        "Editorial Chinese news cover image, realistic but not a live breaking-news photo, "
+        f"topic: {topic}, based only on these provided facts: {facts}. "
+        "Clean mobile-first composition, natural light, credible everyday scene, no text overlays, "
+        "no logos, no public figures, no sensational atmosphere.",
+        1100,
+    )
+    return ToutiaoPackageOut(
+        best_title=best_title,
+        title_options=title_options,
+        lead=lead,
+        body=body,
+        summary_bullets=bullets[:5],
+        cover_brief=cover_brief,
+        image_prompt=image_prompt,
+        image_negative_prompt=(
+            "No text, no platform logo, no media logo, no celebrity, no public figure, "
+            "no fake disaster scene, no exaggerated emotion, no misleading live-news framing."
+        ),
+        compliance_notes=[
+            "已使用保守模板兜底，仅围绕用户提供的事实材料组织内容。",
+            "标题避免夸张诱导表达，正文区分事实、反馈和后续计划。",
+            "封面提示词不要求出现真实媒体标识、公众人物或伪现场新闻画面。",
+        ],
+        fact_check_notes=[
+            "模型服务响应不稳定，本稿为保守草稿，发布前建议人工复核。",
+            _trim_sentence(f"兜底原因：{reason}", 120),
+            "如需更强新闻稿质量，建议补充明确来源、时间、地点、数据口径和采访对象。",
+        ],
+    )
+
+
+def _split_fact_sentences(text: str) -> list[str]:
+    normalized = text.replace("\n", " ").strip()
+    parts = [
+        item.strip(" ，,。；;")
+        for item in normalized.replace("；", "。").replace(";", "。").split("。")
+        if item.strip(" ，,。；;")
+    ]
+    return parts or ([normalized] if normalized else [])
+
+
+def _trim_sentence(value: str, max_length: int) -> str:
+    compact = " ".join(value.split()).strip()
+    if len(compact) <= max_length:
+        return compact
+    if max_length <= 1:
+        return compact[:max_length]
+    return f"{compact[: max_length - 1].rstrip()}…"
 
 
 def _response_error_message(response: httpx.Response, *, prefix: str = "llm optimize failed") -> str:
