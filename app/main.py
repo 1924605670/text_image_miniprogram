@@ -26,12 +26,14 @@ from app.schemas import (
     ReferenceFromGeneratedRequest,
     ReferenceUploadBase64Request,
     ReferenceUploadResponse,
+    ToutiaoPackageRequest,
+    ToutiaoPackageResponse,
     UserOut,
     UserQuotaUpdateRequest,
 )
 from app.services.generation_service import GenerationService
 from app.services.image_client import ImageClient, normalize_provider_error_message
-from app.services.llm_client import LLMClient, PromptOptimizeError
+from app.services.llm_client import LLMClient, PromptOptimizeError, ToutiaoPackageError
 from app.services.prompt import style_options
 from app.services.storage import JobStore, QuotaExceededError
 from app.services.workflow_service import WorkflowRuleError, WorkflowService
@@ -170,6 +172,37 @@ async def optimize_prompt(request: PromptOptimizeRequest) -> PromptOptimizeRespo
     except PromptOptimizeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return PromptOptimizeResponse(optimized_prompt=result.optimized_prompt)
+
+
+@app.post("/api/toutiao-packages", response_model=ToutiaoPackageResponse, status_code=201)
+async def create_toutiao_package(request: ToutiaoPackageRequest) -> ToutiaoPackageResponse:
+    try:
+        package = await llm_client.generate_toutiao_package(request)
+    except ToutiaoPackageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    image_job = None
+    if request.include_image:
+        try:
+            image_job = generation_service.create_generation(
+                GenerationRequest(
+                    prompt=package.image_prompt,
+                    negative_prompt=package.image_negative_prompt,
+                    style_preset="editorial",
+                    size="2048x1152",
+                    quality="high",
+                    output_format="png",
+                    background="auto",
+                    n=1,
+                    client_user_id=request.client_user_id,
+                )
+            )
+        except QuotaExceededError as exc:
+            raise HTTPException(status_code=402, detail="使用次数不足，请联系管理员增加次数") from exc
+    return ToutiaoPackageResponse(
+        package=package,
+        image_job=_job_out(image_job) if image_job else None,
+    )
 
 
 @app.post("/api/reference-images", response_model=ReferenceUploadResponse, status_code=201)

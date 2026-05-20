@@ -1,7 +1,7 @@
 import httpx
 
-from app.schemas import PromptOptimizeRequest
-from app.services.llm_client import LLMClient, _response_error_message
+from app.schemas import PromptOptimizeRequest, ToutiaoPackageRequest
+from app.services.llm_client import LLMClient, _extract_json_object, _response_error_message
 
 
 def test_prompt_optimize_payload_uses_gpt_55_without_temperature() -> None:
@@ -16,6 +16,33 @@ def test_prompt_optimize_payload_uses_gpt_55_without_temperature() -> None:
     assert payload["model"] == "gpt-5.5"
     assert "temperature" not in payload
     assert "keep them out of the optimized prompt text" in payload["messages"][1]["content"]
+
+
+def test_toutiao_payload_requires_json_and_fact_guardrails() -> None:
+    class DummySettings:
+        llm_model = "gpt-5.5"
+        api_key = "test-key"
+
+    client = LLMClient(DummySettings())
+    payload = client._toutiao_payload(
+        ToutiaoPackageRequest(
+            topic="新能源汽车补贴变化",
+            facts="某地发布新政策，补贴范围和申请条件发生调整。",
+        )
+    )
+
+    system = payload["messages"][0]["content"]
+    user = payload["messages"][1]["content"]
+    assert payload["model"] == "gpt-5.5"
+    assert "只输出一个合法 JSON 对象" in system
+    assert "不编造未提供的事实" in system
+    assert "新能源汽车补贴变化" in user
+
+
+def test_extract_json_object_strips_code_fence() -> None:
+    parsed = _extract_json_object('```json\n{"best_title":"标题"}\n```')
+
+    assert parsed["best_title"] == "标题"
 
 
 def test_llm_error_message_includes_provider_body() -> None:

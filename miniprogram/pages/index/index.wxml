@@ -1,0 +1,134 @@
+<view class="screen">
+  <view class="hero">
+    <view>
+      <text class="eyebrow">Toutiao Creator</text>
+      <text class="title">头条图文创作台</text>
+      <text class="subtitle">输入事实材料，生成标题、正文和封面图</text>
+    </view>
+    <view class="health {{healthOk ? 'ok' : 'warn'}}">{{healthText}}</view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-head">
+      <view>
+        <text class="eyebrow">Brief</text>
+        <text class="panel-title">选题资料</text>
+      </view>
+      <button class="text-action" bindtap="useDemo">示例</button>
+    </view>
+
+    <view class="field">
+      <text>选题</text>
+      <input value="{{topic}}" data-field="topic" placeholder="例如：新能源车充电体验升级" bindinput="bindInput" />
+    </view>
+
+    <view class="field">
+      <text>事实材料</text>
+      <textarea value="{{facts}}" data-field="facts" maxlength="4000" placeholder="写入已经确认的时间、地点、人物、数据、来源和背景。材料越具体，结果越稳。" bindinput="bindInput"></textarea>
+    </view>
+
+    <view class="field">
+      <text>报道角度</text>
+      <input value="{{angle}}" data-field="angle" placeholder="可选：从用户影响、政策变化、消费建议等角度切入" bindinput="bindInput" />
+    </view>
+
+    <view class="field">
+      <text>目标读者</text>
+      <input value="{{audience}}" data-field="audience" placeholder="例如：关注本地生活的普通读者" bindinput="bindInput" />
+    </view>
+
+    <view class="picker-grid">
+      <picker mode="selector" range="{{articleStyles}}" value="{{articleStyleIndex}}" bindchange="changeArticleStyle">
+        <view class="select"><text>类型</text><view>{{articleStyleLabel}}</view></view>
+      </picker>
+      <picker mode="selector" range="{{lengths}}" value="{{lengthIndex}}" bindchange="changeLength">
+        <view class="select"><text>篇幅</text><view>{{lengthLabel}}</view></view>
+      </picker>
+      <picker mode="selector" range="{{coverStyles}}" value="{{coverStyleIndex}}" bindchange="changeCoverStyle">
+        <view class="select"><text>封面</text><view>{{coverStyleLabel}}</view></view>
+      </picker>
+    </view>
+
+    <view class="switch-row">
+      <view>
+        <text>同时生成封面图</text>
+        <view>会创建一条异步图片任务</view>
+      </view>
+      <switch checked="{{includeImage}}" bindchange="toggleImage" color="#0f766e" />
+    </view>
+
+    <button class="primary" loading="{{creating}}" disabled="{{creating}}" bindtap="createPackage">
+      {{creating ? '生成中' : '生成头条图文'}}
+    </button>
+    <view wx:if="{{error}}" class="error">{{error}}</view>
+  </view>
+
+  <view wx:if="{{result}}" class="result">
+    <view class="result-head">
+      <view>
+        <text class="eyebrow">Result</text>
+        <text class="panel-title">生成结果</text>
+      </view>
+      <view class="result-actions">
+        <button bindtap="copyTitle">复制标题</button>
+        <button bindtap="copyArticle">复制全文</button>
+      </view>
+    </view>
+
+    <view class="title-card">
+      <text>{{result.best_title}}</text>
+      <view>{{result.lead}}</view>
+    </view>
+
+    <view class="block">
+      <text class="block-title">备选标题</text>
+      <view wx:for="{{result.title_options}}" wx:key="*this" class="option-title">{{item}}</view>
+    </view>
+
+    <view class="block">
+      <text class="block-title">正文</text>
+      <view wx:for="{{bodyParagraphs}}" wx:key="*this" class="paragraph">{{item}}</view>
+    </view>
+
+    <view class="block">
+      <text class="block-title">要点</text>
+      <view wx:for="{{result.summary_bullets}}" wx:key="*this" class="bullet">{{item}}</view>
+    </view>
+
+    <view class="block">
+      <text class="block-title">封面策划</text>
+      <view class="cover-brief">{{result.cover_brief}}</view>
+      <view class="prompt-text">{{result.image_prompt}}</view>
+      <view wx:if="{{result.image_negative_prompt}}" class="negative">避免：{{result.image_negative_prompt}}</view>
+    </view>
+
+    <view wx:if="{{imageJob}}" class="block image-block">
+      <view class="image-status">
+        <text class="block-title">封面图</text>
+        <text>{{jobStatusText}}</text>
+      </view>
+      <image wx:if="{{imageUrl}}" class="preview" mode="aspectFit" src="{{imageUrl}}"></image>
+      <view wx:elif="{{imageJob.status === 'failed'}}" class="error">{{imageJob.error || '图片生成失败'}}</view>
+      <view wx:else class="empty">图片正在生成，请稍等...</view>
+    </view>
+
+    <view class="block">
+      <text class="block-title">合规检查</text>
+      <view wx:for="{{result.compliance_notes}}" wx:key="*this" class="check-note">OK {{item}}</view>
+      <view wx:for="{{result.fact_check_notes}}" wx:key="*this" class="fact-note">待核 {{item}}</view>
+    </view>
+  </view>
+
+  <view class="section-row">
+    <text class="section-title">最近封面任务</text>
+    <button class="text-action" bindtap="loadHistory">刷新</button>
+  </view>
+  <view wx:if="{{recentJobs.length === 0}}" class="empty">暂无图片任务</view>
+  <view wx:for="{{recentJobs}}" wx:key="id" class="job-card">
+    <view>
+      <text>{{item.prompt}}</text>
+      <view>{{item.createdAt}} · {{item.statusText}}</view>
+    </view>
+    <image wx:if="{{item.imageUrl}}" src="{{item.imageUrl}}" mode="aspectFill"></image>
+  </view>
+</view>

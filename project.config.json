@@ -1,0 +1,16 @@
+{
+  "appid": "wx30321379334ec662",
+  "compileType": "miniprogram",
+  "libVersion": "latest",
+  "miniprogramRoot": "miniprogram/",
+  "projectname": "text-image-miniprogram",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "postcss": true,
+    "minified": false,
+    "enhance": true,
+    "compileHotReLoad": true,
+    "minifyWXML": true
+  }
+}

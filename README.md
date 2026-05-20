@@ -5,6 +5,7 @@
 ## 一期功能
 
 - 文生图任务：提示词、负面提示词、风格预设、尺寸、质量、格式、压缩率、背景、生成张数。
+- 头条图文创作台：输入选题、事实材料、报道角度和读者人群，生成头条风格标题、导语、正文、要点、合规检查和封面图任务。
 - 小程序测试版工作台：需求池、开发自测、测试记录、发布记录和产品验收看板。
 - 二期版本验收工作台：版本筛选、发布检查清单、风险/遗留问题、测试入口和验收阻塞记录。
 - 后端任务队列：创建任务后异步执行，前端轮询状态。
@@ -43,6 +44,7 @@ pytest
 - `GET /api/generations/{job_id}`：任务详情。
 - `POST /api/generations/{job_id}/retry`：用同一参数重新创建任务。
 - `GET /api/images/{filename}`：读取本地生成图片。
+- `POST /api/toutiao-packages`：生成头条图文内容包，可选同步创建封面图任务。
 - `GET /api/workflow/board`：小程序测试版流程看板。
 - `GET /api/workflow/board?version=0.2.0`：按版本筛选流程看板，并返回可选版本列表。
 - `POST /api/workflow/requirements`：创建需求。
@@ -57,7 +59,15 @@ pytest
 
 ## 小程序测试版发布
 
-本仓库当前没有微信小程序工程目录、appid、上传私钥或 `miniprogram-ci` 脚本，所以本次迭代已完成应用内测试版发布记录与验收流，尚不能真实上传到微信测试版本。产品、设计、技术和测试规划见 `docs/mini-program-product-iteration.md`。
+本仓库已新增微信小程序工程目录 `miniprogram/` 和 `project.config.json`，appid 为 `wx30321379334ec662`。小程序当前直接请求服务器域名：
+
+```text
+https://api2.hometodo.top/wximg
+```
+
+开发者工具中如果遇到 request 合法域名限制，需要在微信公众平台后台把 `https://api2.hometodo.top` 加入 request 合法域名；开发阶段也可以在工具里勾选“不校验合法域名”。
+
+当前仍缺少上传私钥或 `miniprogram-ci` 脚本，所以真实上传微信测试版本还需补齐 CI 上传配置。产品、设计、技术和测试规划见 `docs/mini-program-product-iteration.md`。
 
 ## 后台服务部署记录
 
