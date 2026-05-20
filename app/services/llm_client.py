@@ -82,9 +82,18 @@ class LLMClient:
         error_prefix: str,
         error_cls: type[RuntimeError],
     ) -> str:
-        timeout = httpx.Timeout(min(self.settings.request_timeout_seconds, 120.0), connect=20.0)
+        timeout = httpx.Timeout(min(self.settings.request_timeout_seconds, 180.0), connect=20.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(self.settings.chat_completions_url, json=payload, headers=self._headers())
+            try:
+                resp = await client.post(
+                    self.settings.chat_completions_url,
+                    json=payload,
+                    headers=self._headers(),
+                )
+            except httpx.TimeoutException as exc:
+                raise error_cls(f"{error_prefix}: provider request timed out") from exc
+            except httpx.HTTPError as exc:
+                raise error_cls(f"{error_prefix}: provider request failed: {exc}") from exc
             if resp.status_code >= 400:
                 raise error_cls(_response_error_message(resp, prefix=error_prefix))
 
@@ -108,9 +117,9 @@ class LLMClient:
 
     def _toutiao_payload(self, req: ToutiaoPackageRequest) -> dict[str, Any]:
         max_tokens = {
-            "short": 1800,
-            "standard": 2800,
-            "long": 4200,
+            "short": 900,
+            "standard": 1800,
+            "long": 3000,
         }[req.length]
         return {
             "model": self.settings.llm_model,

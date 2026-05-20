@@ -100,6 +100,32 @@ async def test_post_chat_raises_clean_error_on_non_json_success(monkeypatch) -> 
     assert "<empty response body>" in message
 
 
+async def test_post_chat_raises_clean_error_on_timeout(monkeypatch) -> None:
+    class DummySettings:
+        api_key = "test-key"
+        request_timeout_seconds = 30.0
+        chat_completions_url = "https://example.test/v1/chat/completions"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow provider", request=request)
+
+    original_async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "app.services.llm_client.httpx.AsyncClient",
+        lambda *args, **kwargs: original_async_client(
+            *args,
+            transport=httpx.MockTransport(handler),
+            **kwargs,
+        ),
+    )
+
+    client = LLMClient(DummySettings())
+    with pytest.raises(ToutiaoPackageError) as exc_info:
+        await client._post_chat({}, "llm toutiao package failed", ToutiaoPackageError)
+
+    assert str(exc_info.value) == "llm toutiao package failed: provider request timed out"
+
+
 async def test_post_chat_falls_back_after_empty_stream(monkeypatch) -> None:
     class DummySettings:
         api_key = "test-key"
