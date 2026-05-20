@@ -103,6 +103,7 @@ async def health() -> dict[str, Any]:
             "llm_url": settings.chat_completions_url,
             "image_model": settings.model,
             "llm_model": settings.llm_model,
+            "llm_fallback_models": list(settings.llm_fallback_models),
             "api_key": settings.masked_api_key,
             "has_api_key": settings.has_api_key,
             "backup_base_url": settings.backup_api_base_url,

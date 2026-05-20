@@ -168,6 +168,7 @@ ssh ubuntu@111.229.10.122 'curl -fsS -X POST http://127.0.0.1:18090/api/auth/log
 - 验收驳回必须记录阻塞原因。
 - 2026-05-20 二期版本验收工作台已通过 CI/CD 同步到服务器，备份：`/home/ubuntu/apps/text_image_backend/backups/cicd-20260520024906`，验证通过：`/`、`/api/health`、`/api/workflow/board?version=0.2.0`。
 - 同次部署发现 CI/CD 在重启阶段存在端口释放竞态，已更新 `scripts/deploy_backend.sh`：增加 `.deploy.lock` 部署锁，停止旧进程后等待 `18090` 端口真正释放，再启动并轮询健康检查。随后补充 GitHub Actions concurrency 和部署锁等待，避免连续 push 时部署互相抢锁失败。修复验证备份：`/home/ubuntu/apps/text_image_backend/backups/cicd-20260520025406`。
+- 头条图文接口使用 `LLM_MODEL` 作为主文本模型，`LLM_FALLBACK_MODELS` 作为逗号分隔的兜底模型列表，默认兜底为 `minimaxai/minimax-m2.7`。2026-05-20 已发现当前网关的 `gpt-5.5` 会返回空的 `text/event-stream`，后端已兼容流式解析，并在主模型无内容时自动切换兜底模型，避免 `/api/toutiao-packages` 因供应商空响应直接失败。
 
 ## GitHub CI/CD
 

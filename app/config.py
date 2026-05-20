@@ -40,6 +40,11 @@ def _bool_env(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _csv_env(name: str, default: str = "") -> tuple[str, ...]:
+    raw = os.getenv(name, default)
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
 def _generation_url(base_url: str) -> str:
     base = base_url.rstrip("/")
     if base.endswith("/images/generations"):
@@ -83,6 +88,10 @@ class Settings:
     backup_api_key: str = os.getenv("IMAGE_BACKUP_API_KEY", "")
     model: str = os.getenv("IMAGE_MODEL", "gpt-image-2")
     llm_model: str = os.getenv("LLM_MODEL", "gpt-5.5")
+    llm_fallback_models: tuple[str, ...] = _csv_env(
+        "LLM_FALLBACK_MODELS",
+        "minimaxai/minimax-m2.7",
+    )
     output_dir: Path = _project_path(os.getenv("IMAGE_OUTPUT_DIR", "generated"))
     reference_dir: Path = _project_path(os.getenv("IMAGE_REFERENCE_DIR", "references"))
     database_path: Path = _project_path(os.getenv("IMAGE_DATABASE_PATH", "data/app.db"))

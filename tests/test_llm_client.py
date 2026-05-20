@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -13,6 +15,7 @@ from app.services.llm_client import (
 def test_prompt_optimize_payload_uses_gpt_55_without_temperature() -> None:
     class DummySettings:
         llm_model = "gpt-5.5"
+        llm_fallback_models = ()
         api_key = "test-key"
 
     client = LLMClient(DummySettings())
@@ -27,6 +30,7 @@ def test_prompt_optimize_payload_uses_gpt_55_without_temperature() -> None:
 def test_toutiao_payload_requires_json_and_fact_guardrails() -> None:
     class DummySettings:
         llm_model = "gpt-5.5"
+        llm_fallback_models = ()
         api_key = "test-key"
 
     client = LLMClient(DummySettings())
@@ -94,3 +98,46 @@ async def test_post_chat_raises_clean_error_on_non_json_success(monkeypatch) -> 
     assert "HTTP 200" in message
     assert "provider returned invalid JSON" in message
     assert "<empty response body>" in message
+
+
+async def test_post_chat_falls_back_after_empty_stream(monkeypatch) -> None:
+    class DummySettings:
+        api_key = "test-key"
+        llm_model = "gpt-5.5"
+        llm_fallback_models = ("minimaxai/minimax-m2.7",)
+        request_timeout_seconds = 30.0
+        chat_completions_url = "https://example.test/v1/chat/completions"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode())
+        if payload["model"] == "gpt-5.5":
+            return httpx.Response(
+                200,
+                text='data: {"choices":[]}\n\ndata: [DONE]\n\n',
+                headers={"content-type": "text/event-stream"},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"ok":true}'}}]},
+            request=request,
+        )
+
+    original_async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "app.services.llm_client.httpx.AsyncClient",
+        lambda *args, **kwargs: original_async_client(
+            *args,
+            transport=httpx.MockTransport(handler),
+            **kwargs,
+        ),
+    )
+
+    client = LLMClient(DummySettings())
+    content = await client._post_chat_with_fallback(
+        {"model": "gpt-5.5", "messages": []},
+        "llm toutiao package failed",
+        ToutiaoPackageError,
+    )
+
+    assert content == '{"ok":true}'

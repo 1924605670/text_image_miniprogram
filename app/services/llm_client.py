@@ -33,7 +33,11 @@ class LLMClient:
 
         payload = self._payload(req)
 
-        content = await self._post_chat(payload, "llm optimize failed", PromptOptimizeError)
+        content = await self._post_chat_with_fallback(
+            payload,
+            "llm optimize failed",
+            PromptOptimizeError,
+        )
         if not content:
             raise PromptOptimizeError("llm optimize returned empty content")
         return OptimizeResult(optimized_prompt=content)
@@ -42,7 +46,7 @@ class LLMClient:
         if not self.settings.has_api_key:
             raise ToutiaoPackageError("IMAGE_API_KEY is missing")
 
-        content = await self._post_chat(
+        content = await self._post_chat_with_fallback(
             self._toutiao_payload(req),
             "llm toutiao package failed",
             ToutiaoPackageError,
@@ -52,6 +56,25 @@ class LLMClient:
             return ToutiaoPackageOut.model_validate(data)
         except Exception as exc:
             raise ToutiaoPackageError("llm toutiao package returned invalid structure") from exc
+
+    async def _post_chat_with_fallback(
+        self,
+        payload: dict[str, Any],
+        error_prefix: str,
+        error_cls: type[RuntimeError],
+    ) -> str:
+        failures: list[str] = []
+        for model in _candidate_llm_models(self.settings):
+            model_payload = {**payload, "model": model}
+            try:
+                content = await self._post_chat(model_payload, error_prefix, error_cls)
+            except error_cls as exc:
+                failures.append(f"{model}: {exc}")
+                continue
+            if content:
+                return content
+            failures.append(f"{model}: empty content")
+        raise error_cls(_all_model_failures_message(error_prefix, failures))
 
     async def _post_chat(
         self,
@@ -64,13 +87,8 @@ class LLMClient:
             resp = await client.post(self.settings.chat_completions_url, json=payload, headers=self._headers())
             if resp.status_code >= 400:
                 raise error_cls(_response_error_message(resp, prefix=error_prefix))
-            try:
-                data = resp.json()
-            except ValueError as exc:
-                raise error_cls(_response_invalid_json_message(resp, prefix=error_prefix)) from exc
 
-        content = _extract_content(data)
-        return content
+        return _extract_response_content(resp, error_prefix, error_cls)
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -81,6 +99,7 @@ class LLMClient:
     def _payload(self, req: PromptOptimizeRequest) -> dict[str, Any]:
         return {
             "model": self.settings.llm_model,
+            "max_tokens": 600,
             "messages": [
                 {"role": "system", "content": _system_instruction()},
                 {"role": "user", "content": _user_brief(req)},
@@ -88,8 +107,14 @@ class LLMClient:
         }
 
     def _toutiao_payload(self, req: ToutiaoPackageRequest) -> dict[str, Any]:
+        max_tokens = {
+            "short": 1800,
+            "standard": 2800,
+            "long": 4200,
+        }[req.length]
         return {
             "model": self.settings.llm_model,
+            "max_tokens": max_tokens,
             "messages": [
                 {"role": "system", "content": _toutiao_system_instruction()},
                 {"role": "user", "content": _toutiao_user_brief(req)},
@@ -186,9 +211,99 @@ def _extract_content(data: dict[str, Any]) -> str:
     msg = choices[0].get("message") if isinstance(choices[0], dict) else None
     if isinstance(msg, dict):
         content = msg.get("content")
-        if isinstance(content, str):
-            return content.strip()
+        parsed = _content_value(content)
+        if parsed:
+            return parsed
     return ""
+
+
+def _extract_response_content(
+    response: httpx.Response,
+    error_prefix: str,
+    error_cls: type[RuntimeError],
+) -> str:
+    content_type = response.headers.get("content-type", "")
+    text = response.text
+    if "text/event-stream" in content_type or text.lstrip().startswith("data:"):
+        try:
+            return _extract_stream_content(text)
+        except ValueError as exc:
+            raise error_cls(_response_invalid_json_message(response, prefix=error_prefix)) from exc
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise error_cls(_response_invalid_json_message(response, prefix=error_prefix)) from exc
+    if not isinstance(data, dict):
+        raise error_cls(f"{error_prefix}: provider returned non-object JSON")
+    return _extract_content(data)
+
+
+def _extract_stream_content(text: str) -> str:
+    parts: list[str] = []
+    for data in _iter_sse_data(text):
+        data = data.strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            parsed = json.loads(data)
+        except json.JSONDecodeError as exc:
+            raise ValueError("provider returned invalid streaming JSON") from exc
+        if not isinstance(parsed, dict):
+            continue
+        top_level = _content_value(parsed.get("content") or parsed.get("output_text"))
+        if top_level:
+            parts.append(top_level)
+        choices = parsed.get("choices")
+        if not isinstance(choices, list):
+            continue
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            for key in ("delta", "message"):
+                node = choice.get(key)
+                if not isinstance(node, dict):
+                    continue
+                content = _content_value(node.get("content"))
+                if content:
+                    parts.append(content)
+            text_value = _content_value(choice.get("text"))
+            if text_value:
+                parts.append(text_value)
+    return "".join(parts).strip()
+
+
+def _iter_sse_data(text: str) -> list[str]:
+    data_items: list[str] = []
+    data_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip("\r")
+        if not line:
+            if data_lines:
+                data_items.append("\n".join(data_lines))
+            data_lines = []
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    if data_lines:
+        data_items.append("\n".join(data_lines))
+    return data_items
+
+
+def _content_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if not isinstance(value, list):
+        return ""
+    parts: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict) and isinstance(item.get("text"), str):
+            parts.append(item["text"])
+    return "".join(parts).strip()
 
 
 def _extract_json_object(content: str) -> dict[str, Any]:
@@ -239,3 +354,29 @@ def _response_text_snippet(response: httpx.Response, max_length: int = 220) -> s
     if len(text) <= max_length:
         return text
     return f"{text[:max_length].rstrip()}..."
+
+
+def _candidate_llm_models(settings: Settings) -> list[str]:
+    configured = [settings.llm_model, *getattr(settings, "llm_fallback_models", ())]
+    models: list[str] = []
+    for model in configured:
+        value = str(model).strip()
+        if value and value not in models:
+            models.append(value)
+    return models
+
+
+def _all_model_failures_message(error_prefix: str, failures: list[str]) -> str:
+    if not failures:
+        return f"{error_prefix}: no configured LLM model"
+    details = "; ".join(_truncate_failure(item) for item in failures[:4])
+    if len(failures) > 4:
+        details = f"{details}; ..."
+    return f"{error_prefix}: all configured LLM models failed: {details}"
+
+
+def _truncate_failure(value: str, max_length: int = 180) -> str:
+    compact = " ".join(value.split())
+    if len(compact) <= max_length:
+        return compact
+    return f"{compact[:max_length].rstrip()}..."
