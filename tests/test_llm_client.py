@@ -194,6 +194,7 @@ async def test_generate_toutiao_package_uses_conservative_fallback(monkeypatch) 
     )
 
     assert "社区智慧健身设施升级" in package.lead
+    assert "从从" not in package.body
     assert package.image_prompt
     assert "保守模板兜底" in package.compliance_notes[0]
     assert "provider request timed out" in package.fact_check_notes[1]

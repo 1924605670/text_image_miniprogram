@@ -339,7 +339,7 @@ def _extract_json_object(content: str) -> dict[str, Any]:
 def _fallback_toutiao_package(req: ToutiaoPackageRequest, reason: str) -> ToutiaoPackageOut:
     topic = _trim_sentence(req.topic, 42)
     facts = _trim_sentence(req.facts, 420)
-    angle = req.angle or "从读者最关心的变化和影响切入"
+    angle = _angle_clause(req.angle)
     audience = req.audience or "今日头条普通读者"
     fact_sentences = _split_fact_sentences(req.facts)
     bullets = [_trim_sentence(item, 80) for item in fact_sentences[:3]]
@@ -362,7 +362,7 @@ def _fallback_toutiao_package(req: ToutiaoPackageRequest, reason: str) -> Toutia
     )
     body = (
         f"围绕{topic}，现有材料显示：{facts}\n\n"
-        f"从{angle}看，这一选题适合先交代已经发生的变化，再说明对{audience}的直接影响。"
+        f"{angle}看，这一选题适合先交代已经发生的变化，再说明对{audience}的直接影响。"
         "写作时应把确定事实、用户反馈和后续计划分开表达，避免把尚未落地的安排写成结果。\n\n"
         "后续发布前，建议继续补充具体时间、地点、责任方或公开来源。"
         "如果材料暂时不足，正文应使用'据现有材料'、'后续仍需观察'等稳健表述。"
@@ -373,7 +373,7 @@ def _fallback_toutiao_package(req: ToutiaoPackageRequest, reason: str) -> Toutia
     )
     image_prompt = _trim_sentence(
         "Editorial Chinese news cover image, realistic but not a live breaking-news photo, "
-        f"topic: {topic}, based only on these provided facts: {facts}. "
+        f"topic: {topic}, based only on these provided facts: {_strip_terminal_punctuation(facts)}. "
         "Clean mobile-first composition, natural light, credible everyday scene, no text overlays, "
         "no logos, no public figures, no sensational atmosphere.",
         1100,
@@ -411,6 +411,19 @@ def _split_fact_sentences(text: str) -> list[str]:
         if item.strip(" ，,。；;")
     ]
     return parts or ([normalized] if normalized else [])
+
+
+def _angle_clause(value: str) -> str:
+    compact = _strip_terminal_punctuation(" ".join(value.split()).strip())
+    if not compact:
+        return "从读者最关心的变化和影响切入"
+    if compact.startswith("从"):
+        return compact
+    return f"从{compact}"
+
+
+def _strip_terminal_punctuation(value: str) -> str:
+    return value.rstrip("。.!！?？；;，, ")
 
 
 def _trim_sentence(value: str, max_length: int) -> str:
