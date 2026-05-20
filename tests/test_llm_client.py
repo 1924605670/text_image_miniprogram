@@ -1,7 +1,13 @@
 import httpx
+import pytest
 
 from app.schemas import PromptOptimizeRequest, ToutiaoPackageRequest
-from app.services.llm_client import LLMClient, _extract_json_object, _response_error_message
+from app.services.llm_client import (
+    LLMClient,
+    ToutiaoPackageError,
+    _extract_json_object,
+    _response_error_message,
+)
 
 
 def test_prompt_optimize_payload_uses_gpt_55_without_temperature() -> None:
@@ -59,3 +65,32 @@ def test_llm_error_message_includes_provider_body() -> None:
 
     assert "HTTP 503" in message
     assert "gpt-5.5" in message
+
+
+async def test_post_chat_raises_clean_error_on_non_json_success(monkeypatch) -> None:
+    class DummySettings:
+        api_key = "test-key"
+        request_timeout_seconds = 30.0
+        chat_completions_url = "https://example.test/v1/chat/completions"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="", request=request)
+
+    original_async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "app.services.llm_client.httpx.AsyncClient",
+        lambda *args, **kwargs: original_async_client(
+            *args,
+            transport=httpx.MockTransport(handler),
+            **kwargs,
+        ),
+    )
+
+    client = LLMClient(DummySettings())
+    with pytest.raises(ToutiaoPackageError) as exc_info:
+        await client._post_chat({}, "llm toutiao package failed", ToutiaoPackageError)
+
+    message = str(exc_info.value)
+    assert "HTTP 200" in message
+    assert "provider returned invalid JSON" in message
+    assert "<empty response body>" in message

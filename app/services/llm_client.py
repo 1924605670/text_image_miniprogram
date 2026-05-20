@@ -64,7 +64,10 @@ class LLMClient:
             resp = await client.post(self.settings.chat_completions_url, json=payload, headers=self._headers())
             if resp.status_code >= 400:
                 raise error_cls(_response_error_message(resp, prefix=error_prefix))
-            data = resp.json()
+            try:
+                data = resp.json()
+            except ValueError as exc:
+                raise error_cls(_response_invalid_json_message(resp, prefix=error_prefix)) from exc
 
         content = _extract_content(data)
         return content
@@ -221,3 +224,18 @@ def _response_error_message(response: httpx.Response, *, prefix: str = "llm opti
         else:
             body = ""
     return f"{prefix}: HTTP {response.status_code}: {body or response.reason_phrase}"
+
+
+def _response_invalid_json_message(response: httpx.Response, *, prefix: str = "llm optimize failed") -> str:
+    body = _response_text_snippet(response)
+    return f"{prefix}: HTTP {response.status_code}: provider returned invalid JSON: {body}"
+
+
+def _response_text_snippet(response: httpx.Response, max_length: int = 220) -> str:
+    text = response.text.strip()
+    if not text:
+        return "<empty response body>"
+    text = " ".join(text.split())
+    if len(text) <= max_length:
+        return text
+    return f"{text[:max_length].rstrip()}..."
