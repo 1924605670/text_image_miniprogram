@@ -86,17 +86,24 @@ fi
 nohup .venv/bin/python3 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port "\$APP_PORT" >> app.log 2>&1 < /dev/null &
 new_pid=\$!
 
-for _ in \$(seq 1 30); do
+health_ok=0
+for _ in \$(seq 1 60); do
   if ! kill -0 "\$new_pid" 2>/dev/null; then
     echo "new process exited"
     tail -80 app.log
     exit 1
   fi
-  if curl -fsS -m 4 "http://127.0.0.1:\$APP_PORT/api/health" >/tmp/text_image_health.json; then
+  if curl -fsS -m 4 "http://127.0.0.1:\$APP_PORT/api/health" >/tmp/text_image_health.json 2>/dev/null; then
+    health_ok=1
     break
   fi
-  sleep 0.5
+  sleep 1
 done
+if [ "\$health_ok" != "1" ]; then
+  echo "new process did not become healthy in time"
+  tail -80 app.log
+  exit 1
+fi
 
 curl -fsS -m 8 "http://127.0.0.1:\$APP_PORT/api/health" >/tmp/text_image_health.json
 curl -fsS -m 8 "http://127.0.0.1:\$APP_PORT/api/workflow/board" >/tmp/text_image_workflow_board.json
