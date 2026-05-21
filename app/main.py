@@ -26,34 +26,14 @@ from app.schemas import (
     ReferenceFromGeneratedRequest,
     ReferenceUploadBase64Request,
     ReferenceUploadResponse,
-    ToutiaoPackageRequest,
-    ToutiaoPackageResponse,
     UserOut,
     UserQuotaUpdateRequest,
 )
 from app.services.generation_service import GenerationService
 from app.services.image_client import ImageClient, normalize_provider_error_message
-from app.services.llm_client import LLMClient, PromptOptimizeError, ToutiaoPackageError
+from app.services.llm_client import LLMClient, PromptOptimizeError
 from app.services.prompt import style_options
 from app.services.storage import JobStore, QuotaExceededError
-from app.services.workflow_service import WorkflowRuleError, WorkflowService
-from app.services.workflow_store import WorkflowStore
-from app.workflow_schemas import (
-    AcceptanceOut,
-    AcceptanceUpdate,
-    DevelopmentTaskCreate,
-    DevelopmentTaskOut,
-    DevelopmentTaskUpdate,
-    ReleaseTaskCreate,
-    ReleaseTaskOut,
-    ReleaseTaskUpdate,
-    RequirementCreate,
-    RequirementOut,
-    TestTaskCreate,
-    TestTaskOut,
-    TestTaskUpdate,
-    WorkflowBoardOut,
-)
 
 
 app = FastAPI(title="Text Image MiniProgram Backend", version="0.1.0")
@@ -61,9 +41,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 store = JobStore(settings.database_path)
-workflow_store = WorkflowStore(settings.database_path)
 generation_service = GenerationService(settings=settings, store=store, client=ImageClient(settings))
-workflow_service = WorkflowService(workflow_store)
 llm_client = LLMClient(settings)
 
 ALLOWED_REFERENCE_CONTENT_TYPES = {
@@ -175,37 +153,6 @@ async def optimize_prompt(request: PromptOptimizeRequest) -> PromptOptimizeRespo
     return PromptOptimizeResponse(optimized_prompt=result.optimized_prompt)
 
 
-@app.post("/api/toutiao-packages", response_model=ToutiaoPackageResponse, status_code=201)
-async def create_toutiao_package(request: ToutiaoPackageRequest) -> ToutiaoPackageResponse:
-    try:
-        package = await llm_client.generate_toutiao_package(request)
-    except ToutiaoPackageError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    image_job = None
-    if request.include_image:
-        try:
-            image_job = generation_service.create_generation(
-                GenerationRequest(
-                    prompt=package.image_prompt,
-                    negative_prompt=package.image_negative_prompt,
-                    style_preset="editorial",
-                    size="2048x1152",
-                    quality="high",
-                    output_format="png",
-                    background="auto",
-                    n=1,
-                    client_user_id=request.client_user_id,
-                )
-            )
-        except QuotaExceededError as exc:
-            raise HTTPException(status_code=402, detail="使用次数不足，请联系管理员增加次数") from exc
-    return ToutiaoPackageResponse(
-        package=package,
-        image_job=_job_out(image_job) if image_job else None,
-    )
-
-
 @app.post("/api/reference-images", response_model=ReferenceUploadResponse, status_code=201)
 async def upload_reference_image(file: UploadFile = File(...)) -> ReferenceUploadResponse:
     content = await file.read()
@@ -291,107 +238,6 @@ async def retry_generation(job_id: str) -> CreateGenerationResponse:
         raise HTTPException(status_code=402, detail="使用次数不足，请联系管理员增加次数") from exc
     return CreateGenerationResponse(job=_job_out(job))
 
-
-
-@app.get("/api/workflow/board", response_model=WorkflowBoardOut)
-async def workflow_board(version: str = "") -> WorkflowBoardOut:
-    return workflow_service.board(version=version)
-
-
-@app.post("/api/workflow/requirements", response_model=RequirementOut, status_code=201)
-async def create_requirement(request: RequirementCreate) -> RequirementOut:
-    return RequirementOut.model_validate(workflow_service.create_requirement(request))
-
-
-@app.post("/api/workflow/requirements/{requirement_id}/confirm", response_model=RequirementOut)
-async def confirm_requirement(requirement_id: str) -> RequirementOut:
-    try:
-        return RequirementOut.model_validate(workflow_service.confirm_requirement(requirement_id))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="requirement not found") from exc
-    except WorkflowRuleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/workflow/requirements/{requirement_id}/pause", response_model=RequirementOut)
-async def pause_requirement(requirement_id: str) -> RequirementOut:
-    try:
-        return RequirementOut.model_validate(workflow_service.pause_requirement(requirement_id))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="requirement not found") from exc
-
-
-@app.post("/api/workflow/development-tasks", response_model=DevelopmentTaskOut, status_code=201)
-async def create_development_task(request: DevelopmentTaskCreate) -> DevelopmentTaskOut:
-    try:
-        return DevelopmentTaskOut.model_validate(workflow_service.create_development_task(request))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="requirement not found") from exc
-    except WorkflowRuleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.patch("/api/workflow/development-tasks/{task_id}", response_model=DevelopmentTaskOut)
-async def update_development_task(
-    task_id: str,
-    request: DevelopmentTaskUpdate,
-) -> DevelopmentTaskOut:
-    try:
-        return DevelopmentTaskOut.model_validate(workflow_service.update_development_task(task_id, request))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="development task not found") from exc
-    except WorkflowRuleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/workflow/test-tasks", response_model=TestTaskOut, status_code=201)
-async def create_test_task(request: TestTaskCreate) -> TestTaskOut:
-    try:
-        return TestTaskOut.model_validate(workflow_service.create_test_task(request))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="development task not found") from exc
-    except WorkflowRuleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.patch("/api/workflow/test-tasks/{task_id}", response_model=TestTaskOut)
-async def update_test_task(task_id: str, request: TestTaskUpdate) -> TestTaskOut:
-    try:
-        return TestTaskOut.model_validate(workflow_service.update_test_task(task_id, request))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="test task not found") from exc
-    except WorkflowRuleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/workflow/release-tasks", response_model=ReleaseTaskOut, status_code=201)
-async def create_release_task(request: ReleaseTaskCreate) -> ReleaseTaskOut:
-    try:
-        return ReleaseTaskOut.model_validate(workflow_service.create_release_task(request))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="test task not found") from exc
-    except WorkflowRuleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.patch("/api/workflow/release-tasks/{task_id}", response_model=ReleaseTaskOut)
-async def update_release_task(task_id: str, request: ReleaseTaskUpdate) -> ReleaseTaskOut:
-    try:
-        return ReleaseTaskOut.model_validate(workflow_service.update_release_task(task_id, request))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="release task not found") from exc
-    except WorkflowRuleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.patch("/api/workflow/release-tasks/{task_id}/acceptance", response_model=AcceptanceOut)
-async def update_acceptance(task_id: str, request: AcceptanceUpdate) -> AcceptanceOut:
-    try:
-        return AcceptanceOut.model_validate(workflow_service.update_acceptance(task_id, request))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="release task not found") from exc
-    except WorkflowRuleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/users/{user_id}/stats", response_model=UserOut)

@@ -106,6 +106,6 @@ if [ "\$health_ok" != "1" ]; then
 fi
 
 curl -fsS -m 8 "http://127.0.0.1:\$APP_PORT/api/health" >/tmp/text_image_health.json
-curl -fsS -m 8 "http://127.0.0.1:\$APP_PORT/api/workflow/board" >/tmp/text_image_workflow_board.json
+curl -fsS -m 8 "http://127.0.0.1:\$APP_PORT/api/options" >/tmp/text_image_options.json
 echo "Backend deployed with pid=\$new_pid"
 REMOTE

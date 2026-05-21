@@ -13,6 +13,14 @@ STYLE_PRESETS: dict[str, StylePreset] = {
             "natural depth, premium color grading"
         ),
     ),
+    "photorealistic": StylePreset(
+        id="photorealistic",
+        label="写实摄影",
+        prompt_suffix=(
+            "photorealistic photography, natural lens perspective, believable materials, "
+            "accurate light behavior, realistic texture detail"
+        ),
+    ),
     "product": StylePreset(
         id="product",
         label="产品",
@@ -27,6 +35,22 @@ STYLE_PRESETS: dict[str, StylePreset] = {
         prompt_suffix=(
             "high-end editorial illustration, expressive shapes, clean color harmony, "
             "confident linework, polished visual storytelling"
+        ),
+    ),
+    "chinese_illustration": StylePreset(
+        id="chinese_illustration",
+        label="国风插画",
+        prompt_suffix=(
+            "contemporary Chinese illustration, elegant ink-inspired rhythm, refined color harmony, "
+            "delicate decorative detail, poetic atmosphere"
+        ),
+    ),
+    "anime": StylePreset(
+        id="anime",
+        label="动漫",
+        prompt_suffix=(
+            "premium anime illustration, clean character design, expressive lighting, "
+            "polished background detail, vibrant but balanced colors"
         ),
     ),
     "poster": StylePreset(
@@ -69,4 +93,3 @@ def style_options() -> list[dict[str, str]]:
         {"id": preset.id, "label": preset.label}
         for preset in STYLE_PRESETS.values()
     ]
-

@@ -3,11 +3,10 @@ import json
 import httpx
 import pytest
 
-from app.schemas import PromptOptimizeRequest, ToutiaoPackageRequest
+from app.schemas import PromptOptimizeRequest
 from app.services.llm_client import (
     LLMClient,
-    ToutiaoPackageError,
-    _extract_json_object,
+    PromptOptimizeError,
     _response_error_message,
 )
 
@@ -25,34 +24,6 @@ def test_prompt_optimize_payload_uses_gpt_55_without_temperature() -> None:
     assert payload["model"] == "gpt-5.5"
     assert "temperature" not in payload
     assert "keep them out of the optimized prompt text" in payload["messages"][1]["content"]
-
-
-def test_toutiao_payload_requires_json_and_fact_guardrails() -> None:
-    class DummySettings:
-        llm_model = "gpt-5.5"
-        llm_fallback_models = ()
-        api_key = "test-key"
-
-    client = LLMClient(DummySettings())
-    payload = client._toutiao_payload(
-        ToutiaoPackageRequest(
-            topic="新能源汽车补贴变化",
-            facts="某地发布新政策，补贴范围和申请条件发生调整。",
-        )
-    )
-
-    system = payload["messages"][0]["content"]
-    user = payload["messages"][1]["content"]
-    assert payload["model"] == "gpt-5.5"
-    assert "只输出一个合法 JSON 对象" in system
-    assert "不编造未提供的事实" in system
-    assert "新能源汽车补贴变化" in user
-
-
-def test_extract_json_object_strips_code_fence() -> None:
-    parsed = _extract_json_object('```json\n{"best_title":"标题"}\n```')
-
-    assert parsed["best_title"] == "标题"
 
 
 def test_llm_error_message_includes_provider_body() -> None:
@@ -91,8 +62,8 @@ async def test_post_chat_raises_clean_error_on_non_json_success(monkeypatch) -> 
     )
 
     client = LLMClient(DummySettings())
-    with pytest.raises(ToutiaoPackageError) as exc_info:
-        await client._post_chat({}, "llm toutiao package failed", ToutiaoPackageError)
+    with pytest.raises(PromptOptimizeError) as exc_info:
+        await client._post_chat({}, "llm optimize failed", PromptOptimizeError)
 
     message = str(exc_info.value)
     assert "HTTP 200" in message
@@ -120,10 +91,10 @@ async def test_post_chat_raises_clean_error_on_timeout(monkeypatch) -> None:
     )
 
     client = LLMClient(DummySettings())
-    with pytest.raises(ToutiaoPackageError) as exc_info:
-        await client._post_chat({}, "llm toutiao package failed", ToutiaoPackageError)
+    with pytest.raises(PromptOptimizeError) as exc_info:
+        await client._post_chat({}, "llm optimize failed", PromptOptimizeError)
 
-    assert str(exc_info.value) == "llm toutiao package failed: provider request timed out"
+    assert str(exc_info.value) == "llm optimize failed: provider request timed out"
 
 
 async def test_post_chat_falls_back_after_empty_stream(monkeypatch) -> None:
@@ -145,7 +116,7 @@ async def test_post_chat_falls_back_after_empty_stream(monkeypatch) -> None:
             )
         return httpx.Response(
             200,
-            json={"choices": [{"message": {"content": '{"ok":true}'}}]},
+            json={"choices": [{"message": {"content": "雨夜城市，电影感构图"}}]},
             request=request,
         )
 
@@ -162,39 +133,8 @@ async def test_post_chat_falls_back_after_empty_stream(monkeypatch) -> None:
     client = LLMClient(DummySettings())
     content = await client._post_chat_with_fallback(
         {"model": "gpt-5.5", "messages": []},
-        "llm toutiao package failed",
-        ToutiaoPackageError,
+        "llm optimize failed",
+        PromptOptimizeError,
     )
 
-    assert content == '{"ok":true}'
-
-
-async def test_generate_toutiao_package_uses_conservative_fallback(monkeypatch) -> None:
-    class DummySettings:
-        has_api_key = True
-        api_key = "test-key"
-        llm_model = "gpt-5.5"
-        llm_fallback_models = ("minimaxai/minimax-m2.7",)
-
-    async def fail_chat(*args, **kwargs) -> str:
-        raise ToutiaoPackageError("provider request timed out")
-
-    client = LLMClient(DummySettings())
-    monkeypatch.setattr(client, "_post_chat_with_fallback", fail_chat)
-
-    package = await client.generate_toutiao_package(
-        ToutiaoPackageRequest(
-            topic="社区智慧健身设施升级",
-            facts="某社区近期新增一批智能健身器材。居民反馈早晚使用人数增加，但部分设备还需要加强使用指引和维护巡检。",
-            angle="从居民日常健身便利性切入。",
-            article_style="local",
-            length="short",
-            cover_style="local",
-        )
-    )
-
-    assert "社区智慧健身设施升级" in package.lead
-    assert "从从" not in package.body
-    assert package.image_prompt
-    assert "保守模板兜底" in package.compliance_notes[0]
-    assert "provider request timed out" in package.fact_check_notes[1]
+    assert content == "雨夜城市，电影感构图"
