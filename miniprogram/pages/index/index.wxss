@@ -6,9 +6,10 @@
 .hero,
 .panel,
 .result,
+.card-block,
 .job-card {
   border: 1rpx solid #dce1e8;
-  border-radius: 16rpx;
+  border-radius: 18rpx;
   background: #ffffff;
   box-shadow: 0 14rpx 36rpx rgba(29, 38, 61, 0.08);
 }
@@ -18,7 +19,11 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 18rpx;
-  padding: 30rpx 28rpx;
+  padding: 26rpx 28rpx;
+}
+
+.hero.compact {
+  padding-bottom: 24rpx;
 }
 
 .eyebrow {
@@ -34,12 +39,13 @@
 .title {
   display: block;
   color: #1c1d1f;
-  font-size: 40rpx;
+  font-size: 38rpx;
   font-weight: 900;
   line-height: 1.15;
 }
 
-.subtitle {
+.subtitle,
+.result-hint {
   display: block;
   margin-top: 10rpx;
   color: #69707d;
@@ -67,8 +73,14 @@
 }
 
 .panel,
-.result {
+.result,
+.auxiliary,
+.history-section {
   margin-top: 22rpx;
+}
+
+.panel,
+.result {
   padding: 24rpx;
 }
 
@@ -83,6 +95,10 @@
   gap: 18rpx;
 }
 
+.result-head {
+  align-items: flex-start;
+}
+
 .panel-title,
 .section-title,
 .block-title {
@@ -94,11 +110,12 @@
 }
 
 .text-action,
-.result-actions button {
+.link-button,
+.copy-actions button {
   min-width: 120rpx;
   height: 60rpx;
   border: 1rpx solid #dce1e8;
-  border-radius: 10rpx;
+  border-radius: 999rpx;
   color: #0f766e;
   background: #ffffff;
   text-align: center;
@@ -107,12 +124,21 @@
   line-height: 60rpx;
 }
 
+.link-button {
+  width: 210rpx;
+  margin-top: 14rpx;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+}
+
 .field {
   margin-top: 22rpx;
 }
 
 .field > text,
-.switch-row text {
+.switch-row text,
+.summary-label {
   display: block;
   margin-bottom: 10rpx;
   color: #69707d;
@@ -124,7 +150,7 @@ input,
 textarea {
   width: 100%;
   border: 1rpx solid #dce1e8;
-  border-radius: 12rpx;
+  border-radius: 14rpx;
   color: #1c1d1f;
   background: #ffffff;
   font-size: 26rpx;
@@ -136,9 +162,41 @@ input {
 }
 
 textarea {
-  min-height: 220rpx;
+  min-height: 260rpx;
   padding: 18rpx;
   line-height: 1.55;
+}
+
+.fact-field textarea {
+  min-height: 300rpx;
+}
+
+.settings-summary,
+.advanced-panel {
+  margin-top: 22rpx;
+  padding: 18rpx;
+  border: 1rpx solid #e8edf3;
+  border-radius: 14rpx;
+  background: #f8fafc;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.chip {
+  padding: 10rpx 16rpx;
+  border-radius: 999rpx;
+  color: #0f5e3f;
+  background: #e6f4f1;
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.advanced-panel {
+  background: #ffffff;
 }
 
 .picker-grid {
@@ -183,14 +241,14 @@ textarea {
 }
 
 .primary {
-  height: 88rpx;
+  height: 92rpx;
   margin-top: 24rpx;
-  border-radius: 12rpx;
+  border-radius: 14rpx;
   color: #ffffff;
   background: #0f766e;
-  font-size: 28rpx;
+  font-size: 29rpx;
   font-weight: 900;
-  line-height: 88rpx;
+  line-height: 92rpx;
 }
 
 .primary[disabled] {
@@ -217,41 +275,65 @@ textarea {
   text-align: center;
 }
 
-.result-head {
-  align-items: flex-start;
+.compact-empty,
+.inline-error {
+  margin-top: 14rpx;
 }
 
-.result-actions {
-  display: flex;
-  gap: 10rpx;
-}
-
-.title-card {
+.copy-actions {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12rpx;
   margin-top: 22rpx;
-  padding: 24rpx;
-  border-radius: 14rpx;
-  background: #e6f4f1;
 }
 
-.title-card text {
+.copy-actions button {
+  width: 100%;
+  min-width: 0;
+  border-radius: 14rpx;
+}
+
+.copy-actions .copy-primary {
+  border-color: #0f766e;
+  color: #ffffff;
+  background: #0f766e;
+}
+
+.publish-preview {
+  margin-top: 22rpx;
+  padding: 26rpx;
+  border-radius: 16rpx;
+  background: #f8fafc;
+}
+
+.preview-title {
   display: block;
-  color: #0f5e3f;
-  font-size: 34rpx;
+  color: #1c1d1f;
+  font-size: 36rpx;
   font-weight: 900;
   line-height: 1.35;
 }
 
-.title-card view {
-  margin-top: 14rpx;
+.preview-lead {
+  margin-top: 16rpx;
   color: #39404a;
-  font-size: 25rpx;
-  line-height: 1.55;
+  font-size: 27rpx;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.preview-body {
+  margin-top: 18rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid #e4e9f0;
 }
 
 .block {
-  margin-top: 26rpx;
-  padding-top: 22rpx;
-  border-top: 1rpx solid #edf0f5;
+  margin-top: 18rpx;
+}
+
+.card-block {
+  padding: 22rpx;
 }
 
 .option-title,
@@ -275,10 +357,6 @@ textarea {
   padding: 14rpx 16rpx;
   border-radius: 10rpx;
   background: #f8fafc;
-}
-
-.bullet::before {
-  content: "";
 }
 
 .prompt-text {
@@ -307,6 +385,10 @@ textarea {
 
 .section-row {
   margin: 30rpx 0 16rpx;
+}
+
+.history-section {
+  opacity: 0.88;
 }
 
 .job-card {
