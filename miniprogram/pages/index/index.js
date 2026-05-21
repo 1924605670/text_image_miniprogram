@@ -48,10 +48,13 @@ Page({
     coverStyleIndex: 0,
     coverStyleLabel: COVER_STYLES[0].label,
     includeImage: true,
+    advancedOpen: false,
+    settingSummary: buildSettingSummary(0, 1, true),
     creating: false,
     error: "",
     result: null,
     bodyParagraphs: [],
+    publishDraft: "",
     imageJob: null,
     imageUrl: "",
     jobStatusText: "",
@@ -84,14 +87,26 @@ Page({
     this.setData({ [event.currentTarget.dataset.field]: event.detail.value });
   },
 
+  toggleAdvanced() {
+    this.setData({ advancedOpen: !this.data.advancedOpen });
+  },
+
   changeArticleStyle(event) {
     const articleStyleIndex = Number(event.detail.value || 0);
-    this.setData({ articleStyleIndex, articleStyleLabel: ARTICLE_STYLES[articleStyleIndex].label });
+    this.setData({
+      articleStyleIndex,
+      articleStyleLabel: ARTICLE_STYLES[articleStyleIndex].label,
+      settingSummary: buildSettingSummary(articleStyleIndex, this.data.lengthIndex, this.data.includeImage)
+    });
   },
 
   changeLength(event) {
     const lengthIndex = Number(event.detail.value || 0);
-    this.setData({ lengthIndex, lengthLabel: LENGTHS[lengthIndex].label });
+    this.setData({
+      lengthIndex,
+      lengthLabel: LENGTHS[lengthIndex].label,
+      settingSummary: buildSettingSummary(this.data.articleStyleIndex, lengthIndex, this.data.includeImage)
+    });
   },
 
   changeCoverStyle(event) {
@@ -100,7 +115,11 @@ Page({
   },
 
   toggleImage(event) {
-    this.setData({ includeImage: event.detail.value });
+    const includeImage = event.detail.value;
+    this.setData({
+      includeImage,
+      settingSummary: buildSettingSummary(this.data.articleStyleIndex, this.data.lengthIndex, includeImage)
+    });
   },
 
   useDemo() {
@@ -130,6 +149,7 @@ Page({
       error: "",
       result: null,
       bodyParagraphs: [],
+      publishDraft: "",
       imageJob: null,
       imageUrl: "",
       jobStatusText: ""
@@ -155,10 +175,12 @@ Page({
         this.setData({
           result,
           bodyParagraphs: splitParagraphs(result.body),
+          publishDraft: formatPublishDraft(result),
           imageJob,
           jobStatusText: imageJob ? JOB_STATUS[imageJob.status] || imageJob.status : "",
           imageUrl: imageFromJob(imageJob)
         });
+        this.scrollToResult();
         if (imageJob && ["pending", "running"].includes(imageJob.status)) {
           this.startPolling(imageJob.id);
         }
@@ -170,6 +192,12 @@ Page({
       .finally(() => {
         this.setData({ creating: false });
       });
+  },
+
+  scrollToResult() {
+    wx.nextTick(() => {
+      wx.pageScrollTo({ selector: "#result-card", duration: 260 });
+    });
   },
 
   startPolling(jobId) {
@@ -215,25 +243,19 @@ Page({
       .catch(() => {});
   },
 
+  copyPublishDraft() {
+    if (!this.data.publishDraft) return;
+    wx.setClipboardData({ data: this.data.publishDraft });
+  },
+
   copyTitle() {
     if (!this.data.result) return;
     wx.setClipboardData({ data: this.data.result.best_title });
   },
 
-  copyArticle() {
+  copyBody() {
     if (!this.data.result) return;
-    const result = this.data.result;
-    const content = [
-      result.best_title,
-      "",
-      result.lead,
-      "",
-      result.body,
-      "",
-      "封面图提示词：",
-      result.image_prompt
-    ].join("\n");
-    wx.setClipboardData({ data: content });
+    wx.setClipboardData({ data: this.data.result.body });
   },
 
   request(path, options = {}) {
@@ -256,6 +278,21 @@ Page({
     });
   }
 });
+
+function buildSettingSummary(articleStyleIndex, lengthIndex, includeImage) {
+  return [
+    ARTICLE_STYLES[articleStyleIndex].label,
+    LENGTHS[lengthIndex].label,
+    includeImage ? "生成封面" : "仅文案"
+  ];
+}
+
+function formatPublishDraft(result) {
+  return [result.best_title, result.lead, result.body]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
 
 function splitParagraphs(body) {
   return String(body || "")
